@@ -1,0 +1,135 @@
+<h2><%=l(:label_kintai_kousu)%></h2>
+
+<div style="overflow-x: auto;">
+  <div class="contextual">
+    <% prev_month = @month - 1
+       prev_year = @year
+       if prev_month < 1
+         prev_month = 12
+         prev_year -= 1
+       end
+       next_month = @month + 1
+       next_year = @year
+       if next_month > 12
+         next_month = 1
+         next_year += 1
+       end
+    %>
+    <%= link_to "<<", kintai_kousu_path(year: prev_year, month: prev_month), class: 'icon icon-previous' %>
+    <span style="margin: 0 10px;"><%= @year %>年 <%= @month %>月</span>
+    <%= link_to ">>", kintai_kousu_path(year: next_year, month: next_month), class: 'icon icon-next' %>
+  </div>
+
+  <table class="list time-entries" style="width: 100%; table-layout: fixed;">
+    <thead>
+      <tr>
+        <th style="text-align: left; width: 150px; padding: 4px 2px;">
+          <%= l(:label_project) %>
+        </th>
+        <% (1..@last_day.day).each do |day| %>
+          <% date = Date.new(@year, @month, day) %>
+          <th style="text-align: center; padding: 4px 1px;">
+            <%= day %><br>
+            <span style="font-size: 0.8em; font-weight: normal;">
+              <%= l(:day_names)[date.wday][0] %>
+            </span>
+          </th>
+        <% end %>
+        <th style="text-align: center; width: 60px; background-color: #f0f0f0; font-weight: bold; padding: 4px 2px;">
+          <%= l(:label_total) %>
+        </th>
+      </tr>
+    </thead>
+    <tbody>
+      <% @project_daily_hours.sort_by { |project, _| project.name }.each do |project, daily_hours| %>
+        <tr class="<%= cycle('odd', 'even') %>">
+          <td style="text-align: left; font-weight: bold; padding: 4px 2px; word-wrap: break-word;">
+            <%= link_to project.name, project_path(project) %>
+          </td>
+          <% (1..@last_day.day).each do |day| %>
+            <% date = Date.new(@year, @month, day) %>
+            <% hours = daily_hours[day] %>
+            <% is_weekend = date.wday == 0 || date.wday == 6 %>
+            <td style="text-align: center; padding: 4px 1px; <%= 'background-color: #fafafa;' if is_weekend %> <%= 'color: #999;' if hours == 0 %>">
+              <%= hours > 0 ? ("%.1f" % hours) : '-' %>
+            </td>
+          <% end %>
+          <td style="text-align: center; background-color: #f0f0f0; padding: 4px 2px;">
+            <%= "%.1f" % @project_totals[project] %>
+          </td>
+        </tr>
+      <% end %>
+      
+      <tr style="background-color: #e8f4f8; font-weight: bold;">
+        <td style="text-align: left; padding: 4px 2px;">
+          <%= l(:label_total) %>
+        </td>
+        <% (1..@last_day.day).each do |day| %>
+          <% date = Date.new(@year, @month, day) %>
+          <% hours = @daily_hours[day] %>
+          <% is_weekend = date.wday == 0 || date.wday == 6 %>
+          <td style="text-align: center; padding: 0; <%= 'background-color: #d8e8f0;' if is_weekend %>">
+            <%= link_to ("%.1f" % hours), 
+                        kintai_kousu_show_path(year: @year, month: @month, day: day),
+                        style: 'text-decoration: none; display: block; width: 100%; height: 100%; padding: 4px 1px;' %>
+          </td>
+        <% end %>
+        <td style="text-align: center; background-color: #d0e0f0; font-weight: bold; padding: 4px 2px;">
+          <%= "%.1f" % @total_hours %>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<br>
+
+<% if @time_entries.any? %>
+  <h3><%= l(:label_details) %></h3>
+  <div class="autoscroll">
+    <table class="list time-entries">
+      <thead>
+        <tr>
+          <th><%=l(:field_spent_on)%></th>
+          <th><%=l(:label_project)%></th>
+          <th><%=l(:field_issue)%></th>
+          <th><%=l(:field_activity)%></th>
+          <th><%=l(:field_hours)%></th>
+          <th><%=l(:field_comments)%></th>
+        </tr>
+      </thead>
+      <tbody>
+        <% @time_entries.each do |entry| %>
+          <tr class="<%= cycle('odd', 'even') %>">
+            <td class="spent_on">
+              <%= format_date(entry.spent_on) %>
+            </td>
+            <td class="project">
+              <%= link_to_project(entry.project) %>
+            </td>
+            <td class="subject">
+              <% if entry.issue %>
+                <%= link_to_issue(entry.issue, :truncate => 50) %>
+              <% else %>
+                <em><%=l(:label_none)%></em>
+              <% end %>
+            </td>
+            <td class="activity">
+              <%= entry.activity.name %>
+            </td>
+            <td class="hours">
+              <%= html_hours("%.2f" % entry.hours) %>
+            </td>
+            <td class="comments">
+              <%= entry.comments %>
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  </div>
+<% else %>
+  <p class="nodata">
+    <%= l(:label_no_data) %>
+  </p>
+<% end %>

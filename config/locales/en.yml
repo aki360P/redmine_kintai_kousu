@@ -1,0 +1,6 @@
+en:
+  label_kintai_kousu: "Time Entries"
+  label_details: "Details"
+  label_time_entry_new: "New Time Entry"
+  label_existing_entries: "Existing Entries for This Day"
+  day_names: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]

@@ -1,0 +1,6 @@
+ja:
+  label_kintai_kousu: "勤怠工数"
+  label_details: "詳細"
+  label_time_entry_new: "工数登録"
+  label_existing_entries: "この日の既存工数"
+  day_names: ["日", "月", "火", "水", "木", "金", "土"]

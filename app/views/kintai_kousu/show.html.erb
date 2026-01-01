@@ -1,0 +1,989 @@
+<div style="margin-bottom: 15px;">
+  <h2 style="display: inline-block; margin-right: 20px;"><%=l(:label_kintai_kousu)%> - <%= format_date(@date) %> (<%= day_name(@date.cwday) %>)</h2>
+  <% prev_date = @date - 1 %>
+  <% next_date = @date + 1 %>
+  <%= link_to '« 前日', kintai_kousu_show_path(year: prev_date.year, month: prev_date.month, day: prev_date.day), class: 'icon icon-arrow-left', style: 'margin-right: 5px; text-decoration: none;' %>
+  <%= link_to '翌日 »', kintai_kousu_show_path(year: next_date.year, month: next_date.month, day: next_date.day), class: 'icon icon-arrow-right', style: 'margin-right: 10px; text-decoration: none;' %>
+  <%= link_to l(:button_back), kintai_kousu_path(year: @year, month: @month), class: 'icon icon-cancel', style: 'text-decoration: none;' %>
+</div>
+
+<!-- この日の既存工数 -->
+<div id="existing-entries-container">
+  <% if @existing_entries.any? %>
+    <div class="box" style="margin-top: 10px;">
+      <h3><%=l(:label_existing_entries)%></h3>
+      <table class="list" style="width: 100%;" id="existing-entries-table">
+        <thead>
+          <tr>
+            <th style="width: 20%;"><%=l(:field_project)%></th>
+            <th style="width: 25%;"><%=l(:field_issue)%></th>
+            <th style="width: 10%;"><%=l(:field_hours)%></th>
+            <th style="width: 15%;"><%=l(:field_activity)%></th>
+            <th style="width: 30%;"><%=l(:field_comments)%></th>
+          </tr>
+        </thead>
+        <tbody id="existing-entries-tbody">
+          <% @existing_entries.each do |entry| %>
+            <tr class="<%= cycle('odd', 'even') %> time-entry-row" 
+                style="cursor: pointer;" 
+                data-entry-id="<%= entry.id %>"
+                data-project-id="<%= entry.project_id %>"
+                data-issue-id="<%= entry.issue_id %>"
+                data-hours="<%= entry.hours %>"
+                data-activity-id="<%= entry.activity_id %>"
+                data-comments="<%= entry.comments.to_s.gsub('"', '&quot;') %>"
+                title="クリックして編集">
+              <td><%= link_to_project(entry.project) %></td>
+              <td>
+                <% if entry.issue %>
+                  <%= link_to_issue(entry.issue) %>
+                <% else %>
+                  <em>-</em>
+                <% end %>
+              </td>
+              <td style="font-family: inherit;"><%= "%.2f" % entry.hours %></td>
+              <td><%= entry.activity.name %></td>
+              <td><%= entry.comments %></td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+  <% else %>
+    <div class="box" style="margin-top: 10px; display: none;" id="no-entries-message">
+      <p style="color: #999; text-align: center; padding: 10px;">まだ工数が登録されていません</p>
+    </div>
+  <% end %>
+</div>
+
+<div style="margin-bottom: 15px;">
+  <button onclick="openModal()" class="icon icon-add" style="padding: 8px 15px; cursor: pointer;">
+    <%= l(:label_time_entry_new) %>
+  </button>
+</div>
+
+<div style="display: flex; gap: 20px;">
+  <!-- 左サイドバー: トラッカーフィルター -->
+  <div style="width: 200px; flex-shrink: 0;">
+    <div class="box">
+      <h3><%=l(:label_tracker)%></h3>
+      <div style="padding: 5px;">
+        <label style="display: block; padding: 5px 0;">
+          <input type="checkbox" id="tracker-all" checked onchange="filterByTracker('all')">
+          <strong><%=l(:label_all)%></strong>
+        </label>
+        <hr style="margin: 5px 0;">
+        <% @trackers.each do |tracker| %>
+          <label style="display: block; padding: 5px 0;">
+            <input type="checkbox" class="tracker-filter" data-tracker-id="<%= tracker.id %>" checked onchange="filterByTracker(<%= tracker.id %>)">
+            <%= tracker.name %>
+          </label>
+        <% end %>
+      </div>
+    </div>
+  </div>
+  
+  <!-- メインコンテンツ: プロジェクト・チケット一覧 -->
+  <div style="flex: 1;">
+    <div class="box issue-list-box">
+      <h3><%=l(:label_project_plural)%> / <%=l(:label_issue_plural)%></h3>
+      <p style="color: #666; font-size: 0.9em; margin-bottom: 10px;">チケットをクリックすると工数登録フォームが開きます</p>
+      
+      <div class="project-sections-container">
+      <% if @issues_by_project.any? %>
+        <% @issues_by_project.each do |project, root_issues| %>
+          <% if root_issues.any? %>
+            <div class="project-section" style="margin-bottom: 20px;">
+              <h4 style="margin: 10px 0 5px 0; padding: 5px; background-color: #f0f0f0; border-left: 4px solid #169;">
+                <%= link_to project.name, project_path(project), target: '_blank', style: 'font-weight: bold;' %>
+              </h4>
+              <%= render_issue_hierarchy(root_issues, 0) %>
+            </div>
+          <% end %>
+        <% end %>
+      <% else %>
+        <p class="nodata"><%=l(:label_no_data)%></p>
+      <% end %>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- モーダル工数登録フォーム -->
+<div id="time-entry-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.5); z-index: 1000; overflow: auto;">
+  <div style="position: relative; width: 500px; max-width: 90%; margin: 50px auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 2px solid #169; padding-bottom: 10px;">
+      <h3 style="margin: 0;"><%=l(:label_time_entry_new)%></h3>
+      <button onclick="closeModal()" style="background: none; border: none; font-size: 24px; cursor: pointer; color: #999; line-height: 1;">&times;</button>
+    </div>
+    
+    <%= form_tag({action: 'create', year: @year, month: @month, day: @day}, method: :post, id: 'time_entry_form') do %>
+      <div style="margin-bottom: 15px;">
+        <label for="time_entry_project_id" style="display: block; margin-bottom: 5px; font-weight: bold;">
+          <%= l(:field_project) %>
+        </label>
+        <%= select_tag 'time_entry[project_id]', 
+            options_from_collection_for_select(@projects, :id, :name),
+            required: true,
+            id: 'project_select',
+            onchange: 'updateIssues(this.value)',
+            style: 'width: 100%;',
+            include_blank: false %>
+      </div>
+      
+      <div style="margin-bottom: 15px;">
+        <label for="issue_select" style="display: block; margin-bottom: 5px; font-weight: bold;">
+          <%= l(:field_issue) %> (<%= l(:label_optional).downcase %>)
+        </label>
+        <%= select_tag 'time_entry[issue_id]', 
+            '<option value=""></option>'.html_safe,
+            id: 'issue_select',
+            style: 'width: 100%;' %>
+        <div id="selected_issue_info" style="margin-top: 5px; padding: 8px; background: #f9f9f9; border-left: 3px solid #169; display: none;">
+          <div style="font-size: 0.9em; color: #666;">
+            <strong id="issue_tracker"></strong>
+            <span id="issue_number" style="font-weight: bold;"></span>
+          </div>
+          <div id="issue_subject" style="margin-top: 3px; font-size: 0.95em;"></div>
+        </div>
+      </div>
+      
+      <div style="margin-bottom: 15px;">
+        <label for="hours_input" style="display: block; margin-bottom: 5px; font-weight: bold;">
+          <%= l(:field_hours) %>
+        </label>
+        <%= text_field_tag 'time_entry[hours]', '', 
+            size: 6, 
+            required: true, 
+            id: 'hours_input',
+            placeholder: '例: 1.5',
+            style: 'width: 150px;' %>
+      </div>
+      
+      <div style="margin-bottom: 15px;">
+        <label for="time_entry_activity_id" style="display: block; margin-bottom: 5px; font-weight: bold;">
+          <%= l(:field_activity) %>
+        </label>
+        <%= select_tag 'time_entry[activity_id]', 
+            options_from_collection_for_select(@activities, :id, :name),
+            required: true,
+            style: 'width: 100%;' %>
+      </div>
+      
+      <div style="margin-bottom: 20px;">
+        <label for="time_entry_comments" style="display: block; margin-bottom: 5px; font-weight: bold;">
+          <%= l(:field_comments) %>
+        </label>
+        <%= text_area_tag 'time_entry[comments]', '', 
+            rows: 4,
+            placeholder: '作業内容のメモ',
+            style: 'width: 100%; box-sizing: border-box; resize: vertical;' %>
+      </div>
+      
+      <div style="display: flex; gap: 10px; justify-content: flex-end;">
+        <button type="button" onclick="closeModal()" style="padding: 8px 20px; cursor: pointer;">
+          <%= l(:button_cancel) %>
+        </button>
+        <%= submit_tag l(:button_create), class: 'button', id: 'submit_button', style: 'padding: 8px 20px;' %>
+      </div>
+      <div id="form-message" style="margin-top: 10px; padding: 8px; border-radius: 4px; display: none;"></div>
+    <% end %>
+  </div>
+</div>
+
+<!-- モーダル工数編集フォーム -->
+<div id="edit-time-entry-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.5); z-index: 1000; overflow: auto;">
+  <div style="position: relative; width: 500px; max-width: 90%; margin: 50px auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 2px solid #169; padding-bottom: 10px;">
+      <h3 style="margin: 0;">工数の編集</h3>
+      <button onclick="closeEditModal()" style="background: none; border: none; font-size: 24px; cursor: pointer; color: #999; line-height: 1;">&times;</button>
+    </div>
+    
+    <form id="edit_time_entry_form">
+      <input type="hidden" id="edit_entry_id">
+      
+      <div style="margin-bottom: 15px;">
+        <label for="edit_time_entry_project_id" style="display: block; margin-bottom: 5px; font-weight: bold;">
+          <%= l(:field_project) %>
+        </label>
+        <%= select_tag 'time_entry[project_id]', 
+            options_from_collection_for_select(@projects, :id, :name),
+            required: true,
+            id: 'edit_project_select',
+            onchange: 'updateEditIssues(this.value)',
+            style: 'width: 100%;' %>
+      </div>
+      
+      <div style="margin-bottom: 15px;">
+        <label for="edit_issue_select" style="display: block; margin-bottom: 5px; font-weight: bold;">
+          <%= l(:field_issue) %> (<%= l(:label_optional).downcase %>)
+        </label>
+        <select name="time_entry[issue_id]" id="edit_issue_select" style="width: 100%;">
+          <option value=""></option>
+        </select>
+        <div id="edit_selected_issue_info" style="margin-top: 5px; padding: 8px; background: #f9f9f9; border-left: 3px solid #169; display: none;">
+          <div style="font-size: 0.9em; color: #666;">
+            <strong id="edit_issue_tracker"></strong>
+            <span id="edit_issue_number" style="font-weight: bold;"></span>
+          </div>
+          <div id="edit_issue_subject" style="margin-top: 3px; font-size: 0.95em;"></div>
+        </div>
+      </div>
+      
+      <div style="margin-bottom: 15px;">
+        <label for="edit_hours_input" style="display: block; margin-bottom: 5px; font-weight: bold;">
+          <%= l(:field_hours) %>
+        </label>
+        <input type="text" name="time_entry[hours]" size="6" required id="edit_hours_input" placeholder="例: 1.5" style="width: 150px;">
+      </div>
+      
+      <div style="margin-bottom: 15px;">
+        <label for="edit_time_entry_activity_id" style="display: block; margin-bottom: 5px; font-weight: bold;">
+          <%= l(:field_activity) %>
+        </label>
+        <%= select_tag 'time_entry[activity_id]', 
+            options_from_collection_for_select(@activities, :id, :name),
+            required: true,
+            id: 'edit_activity_select',
+            style: 'width: 100%;' %>
+      </div>
+      
+      <div style="margin-bottom: 20px;">
+        <label for="edit_time_entry_comments" style="display: block; margin-bottom: 5px; font-weight: bold;">
+          <%= l(:field_comments) %>
+        </label>
+        <textarea name="time_entry[comments]" rows="4" id="edit_comments_input" placeholder="作業内容のメモ" style="width: 100%; box-sizing: border-box; resize: vertical;"></textarea>
+      </div>
+      
+      <div style="display: flex; gap: 10px; justify-content: space-between;">
+        <button type="button" onclick="deleteTimeEntry()" class="icon icon-del" style="padding: 8px 20px; cursor: pointer; background: #d9534f; color: white; border: none; border-radius: 3px;">
+          <%= l(:button_delete) %>
+        </button>
+        <div style="display: flex; gap: 10px;">
+          <button type="button" onclick="closeEditModal()" style="padding: 8px 20px; cursor: pointer;">
+            <%= l(:button_cancel) %>
+          </button>
+          <button type="submit" class="button" id="edit_submit_button" style="padding: 8px 20px;">
+            <%= l(:button_save) %>
+          </button>
+        </div>
+      </div>
+      <div id="edit-form-message" style="margin-top: 10px; padding: 8px; border-radius: 4px; display: none;"></div>
+    </form>
+  </div>
+</div>
+
+<script>
+// モーダル関連の関数
+function openModal() {
+  document.getElementById('time-entry-modal').style.display = 'block';
+  document.body.style.overflow = 'hidden'; // 背景のスクロールを防ぐ
+}
+
+function closeModal() {
+  document.getElementById('time-entry-modal').style.display = 'none';
+  document.body.style.overflow = 'auto'; // スクロールを戻す
+  resetForm();
+}
+
+// 編集モーダルを開く
+function openEditModal() {
+  document.getElementById('edit-time-entry-modal').style.display = 'block';
+  document.body.style.overflow = 'hidden';
+}
+
+// 編集モーダルを閉じる
+function closeEditModal() {
+  document.getElementById('edit-time-entry-modal').style.display = 'none';
+  document.body.style.overflow = 'auto';
+  resetEditForm();
+}
+
+// 編集フォームをリセット
+function resetEditForm() {
+  document.getElementById('edit_hours_input').value = '';
+  document.getElementById('edit_comments_input').value = '';
+  document.getElementById('edit_issue_select').value = '';
+  hideEditIssueInfo();
+}
+
+// 編集用チケット情報を非表示
+function hideEditIssueInfo() {
+  document.getElementById('edit_selected_issue_info').style.display = 'none';
+}
+
+// 編集用チケット情報を表示
+function showEditIssueInfo(issue) {
+  const infoDiv = document.getElementById('edit_selected_issue_info');
+  document.getElementById('edit_issue_tracker').textContent = issue.trackerName;
+  document.getElementById('edit_issue_number').textContent = '#' + issue.id;
+  document.getElementById('edit_issue_subject').textContent = issue.subject;
+  infoDiv.style.display = 'block';
+}
+
+// 編集用チケット選択肢を更新
+function updateEditIssues(projectId) {
+  const select = document.getElementById('edit_issue_select');
+  select.innerHTML = '<option value=""></option>';
+  
+  if (!projectId) {
+    hideEditIssueInfo();
+    return;
+  }
+  
+  const projectIssues = Object.values(issuesData).filter(issue => issue.projectId == projectId);
+  
+  projectIssues.forEach(issue => {
+    const option = document.createElement('option');
+    option.value = issue.id;
+    option.textContent = '#' + issue.id + ' ' + issue.subject;
+    select.appendChild(option);
+  });
+}
+
+// 工数を編集（モーダルに値を設定）
+function editTimeEntry(id, projectId, issueId, hours, activityId, comments) {
+  document.getElementById('edit_entry_id').value = id;
+  document.getElementById('edit_project_select').value = projectId;
+  // 時間を数値に変換（分数形式の場合も対応）
+  let hoursValue = hours;
+  if (typeof hoursValue === 'string' && hoursValue.includes('/')) {
+    const parts = hoursValue.split('/');
+    hoursValue = parseFloat(parts[0]) / parseFloat(parts[1]);
+  }
+  document.getElementById('edit_hours_input').value = parseFloat(hoursValue);
+  document.getElementById('edit_activity_select').value = activityId;
+  document.getElementById('edit_comments_input').value = comments || '';
+  
+  // チケット選択肢を更新
+  updateEditIssues(projectId);
+  
+  setTimeout(() => {
+    if (issueId) {
+      document.getElementById('edit_issue_select').value = issueId;
+      const issue = issuesData[issueId];
+      if (issue) {
+        showEditIssueInfo(issue);
+      }
+    }
+  }, 100);
+  
+  openEditModal();
+}
+
+// 工数を削除
+function deleteTimeEntry() {
+  if (!confirm('この工数を削除しますか？')) {
+    return;
+  }
+  
+  const entryId = document.getElementById('edit_entry_id').value;
+  const csrfToken = document.querySelector('meta[name="csrf-token"]').content;
+  
+  fetch('/kintai_kousu/' + entryId + '.json', {
+    method: 'DELETE',
+    headers: {
+      'X-CSRF-Token': csrfToken,
+      'X-Requested-With': 'XMLHttpRequest'
+    },
+    credentials: 'same-origin'
+  })
+  .then(response => response.json())
+  .then(data => {
+    if (data.success) {
+      showEditMessage('success', data.message || '工数を削除しました');
+      removeEntryFromTable(entryId);
+      setTimeout(() => {
+        closeEditModal();
+      }, 1500);
+    }
+  })
+  .catch(error => {
+    showEditMessage('error', '削除に失敗しました');
+    console.error('Error:', error);
+  });
+}
+
+// テーブルから行を削除
+function removeEntryFromTable(entryId) {
+  const tbody = document.getElementById('existing-entries-tbody');
+  const rows = tbody.querySelectorAll('tr');
+  
+  rows.forEach(row => {
+    if (row.dataset.entryId == entryId) {
+      row.remove();
+    }
+  });
+  
+  updateRowClasses();
+}
+
+// 編集メッセージ表示
+function showEditMessage(type, message) {
+  const messageDiv = document.getElementById('edit-form-message');
+  messageDiv.textContent = message;
+  messageDiv.style.display = 'block';
+  
+  if (type === 'success') {
+    messageDiv.style.backgroundColor = '#d4edda';
+    messageDiv.style.color = '#155724';
+    messageDiv.style.border = '1px solid #c3e6cb';
+  } else {
+    messageDiv.style.backgroundColor = '#f8d7da';
+    messageDiv.style.color = '#721c24';
+    messageDiv.style.border = '1px solid #f5c6cb';
+  }
+  
+  setTimeout(() => {
+    messageDiv.style.display = 'none';
+  }, 5000);
+}
+
+// モーダルの背景クリックで閉じる
+document.addEventListener('DOMContentLoaded', function() {
+  const modal = document.getElementById('time-entry-modal');
+  modal.addEventListener('click', function(e) {
+    if (e.target === modal) {
+      closeModal();
+    }
+  });
+  
+  const editModal = document.getElementById('edit-time-entry-modal');
+  editModal.addEventListener('click', function(e) {
+    if (e.target === editModal) {
+      closeEditModal();
+    }
+  });
+  
+  // 既存工数の行クリックイベント
+  document.addEventListener('click', function(e) {
+    const row = e.target.closest('.time-entry-row');
+    if (row) {
+      const entryId = row.dataset.entryId;
+      const projectId = row.dataset.projectId;
+      const issueId = row.dataset.issueId;
+      const hours = row.dataset.hours;
+      const activityId = row.dataset.activityId;
+      const comments = row.dataset.comments;
+      
+      editTimeEntry(entryId, projectId, issueId === '' ? null : issueId, hours, activityId, comments);
+    }
+  });
+});
+
+// チケットデータをJSONとして保持
+const issuesData = {};
+<% @issues_by_project.each do |project, root_issues| %>
+  <% all_issues = root_issues + root_issues.flat_map { |i| i.descendants.visible.where.not(status: IssueStatus.where(is_closed: true)) } %>
+  <% all_issues.each do |issue| %>
+    issuesData[<%= issue.id %>] = {
+      id: <%= issue.id %>,
+      subject: <%= issue.subject.to_json.html_safe %>,
+      projectId: <%= issue.project_id %>,
+      projectName: <%= issue.project.name.to_json.html_safe %>,
+      trackerId: <%= issue.tracker_id %>,
+      trackerName: <%= issue.tracker.name.to_json.html_safe %>
+    };
+  <% end %>
+<% end %>
+
+function filterByTracker(trackerId) {
+  const allCheckbox = document.getElementById('tracker-all');
+  const trackerCheckboxes = document.querySelectorAll('.tracker-filter');
+  
+  if (trackerId === 'all') {
+    // 全選択/全解除
+    const isChecked = allCheckbox.checked;
+    trackerCheckboxes.forEach(cb => {
+      cb.checked = isChecked;
+    });
+    
+    // チケット一覧内のすべてのチケットを表示/非表示
+    document.querySelectorAll('.issue-item').forEach(item => {
+      // 既存工数テーブル内の要素は除外
+      if (!item.closest('#existing-entries-container')) {
+        item.style.display = isChecked ? 'list-item' : 'none';
+      }
+    });
+  } else {
+    // 個別トラッカーのフィルター
+    const checkbox = document.querySelector('.tracker-filter[data-tracker-id="' + trackerId + '"]');
+    const issues = document.querySelectorAll('.tracker-' + trackerId);
+    
+    console.log('Filtering tracker:', trackerId, 'Checked:', checkbox.checked, 'Found issues:', issues.length);
+    
+    issues.forEach(item => {
+      // 既存工数テーブル内の要素は除外
+      if (!item.closest('#existing-entries-container')) {
+        item.style.display = checkbox.checked ? 'list-item' : 'none';
+      }
+    });
+    
+    // 全選択チェックボックスの状態を更新
+    const allChecked = Array.from(trackerCheckboxes).every(cb => cb.checked);
+    allCheckbox.checked = allChecked;
+  }
+  
+  // 全チケットが非表示かチェック
+  updateNoDataMessage();
+}
+
+// 全チケットが非表示のときにメッセージ表示
+function updateNoDataMessage() {
+  // チケット一覧内の表示中のチケットを数える
+  const allIssues = document.querySelectorAll('.issue-item');
+  let visibleCount = 0;
+  
+  allIssues.forEach(item => {
+    // 既存工数テーブル内の要素は除外
+    if (!item.closest('#existing-entries-container')) {
+      const isVisible = item.style.display !== 'none';
+      if (isVisible) {
+        visibleCount++;
+      }
+    }
+  });
+  
+  // 表示中のチケットが0件の場合、メッセージを表示
+  let noDataMessage = document.getElementById('no-filtered-data-message');
+  
+  if (visibleCount === 0) {
+    if (!noDataMessage) {
+      const issueListBox = document.querySelector('.issue-list-box');
+      const projectSections = issueListBox.querySelector('.project-sections-container');
+      
+      const msg = document.createElement('p');
+      msg.id = 'no-filtered-data-message';
+      msg.className = 'nodata';
+      msg.textContent = '表示するデータがありません';
+      msg.style.textAlign = 'center';
+      msg.style.padding = '20px';
+      msg.style.color = '#999';
+      
+      if (projectSections) {
+        projectSections.appendChild(msg);
+      } else {
+        issueListBox.appendChild(msg);
+      }
+    } else {
+      noDataMessage.style.display = 'block';
+    }
+  } else {
+    if (noDataMessage) {
+      noDataMessage.style.display = 'none';
+    }
+  }
+}
+
+function updateIssues(projectId) {
+  const select = document.getElementById('issue_select');
+  select.innerHTML = '<option value=""></option>';
+  
+  if (!projectId) {
+    hideIssueInfo();
+    return;
+  }
+  
+  // issuesDataからプロジェクトのチケットをフィルタリング
+  const projectIssues = Object.values(issuesData).filter(issue => issue.projectId == projectId);
+  
+  projectIssues.forEach(issue => {
+    const option = document.createElement('option');
+    option.value = issue.id;
+    option.textContent = '#' + issue.id + ' ' + issue.subject;
+    select.appendChild(option);
+  });
+}
+
+// チケットをクリックしたときにモーダルを開いて自動入力
+function selectIssueForTimeEntry(issueId) {
+  const issue = issuesData[issueId];
+  if (!issue) {
+    console.error('Issue not found:', issueId);
+    return;
+  }
+  
+  // モーダルを開く
+  openModal();
+  
+  // プロジェクトを選択
+  const projectSelect = document.getElementById('project_select');
+  projectSelect.value = issue.projectId;
+  
+  // チケット選択肢を更新
+  updateIssues(issue.projectId);
+  
+  // チケット選択肢が読み込まれるのを待ってから選択
+  setTimeout(() => {
+    const issueSelect = document.getElementById('issue_select');
+    
+    // チケットが選択肢にない場合は追加
+    let optionExists = false;
+    for (let i = 0; i < issueSelect.options.length; i++) {
+      if (issueSelect.options[i].value == issueId) {
+        optionExists = true;
+        break;
+      }
+    }
+    
+    if (!optionExists) {
+      const option = document.createElement('option');
+      option.value = issueId;
+      option.textContent = '#' + issueId + ' ' + issue.subject;
+      issueSelect.appendChild(option);
+    }
+    
+    issueSelect.value = issueId;
+    
+    // チケット情報を表示
+    showIssueInfo(issue);
+    
+    // 工数入力欄にフォーカス
+    document.getElementById('hours_input').focus();
+  }, 100);
+}
+
+// チケット情報を表示
+function showIssueInfo(issue) {
+  const infoDiv = document.getElementById('selected_issue_info');
+  document.getElementById('issue_tracker').textContent = issue.trackerName;
+  document.getElementById('issue_number').textContent = '#' + issue.id;
+  document.getElementById('issue_subject').textContent = issue.subject;
+  infoDiv.style.display = 'block';
+}
+
+// チケット情報を非表示
+function hideIssueInfo() {
+  document.getElementById('selected_issue_info').style.display = 'none';
+}
+
+// チケット選択が変更されたときの処理
+document.addEventListener('DOMContentLoaded', function() {
+  const issueSelect = document.getElementById('issue_select');
+  issueSelect.addEventListener('change', function() {
+    if (this.value) {
+      const issue = issuesData[this.value];
+      if (issue) {
+        showIssueInfo(issue);
+      }
+    } else {
+      hideIssueInfo();
+    }
+  });
+  
+  // Ajaxフォーム送信の処理
+  const form = document.getElementById('time_entry_form');
+  
+  form.addEventListener('submit', function(event) {
+    event.preventDefault();
+    
+    const submitBtn = document.getElementById('submit_button');
+    submitBtn.disabled = true;
+    submitBtn.value = '登録中...';
+    
+    const formData = new FormData(form);
+    const csrfToken = document.querySelector('meta[name="csrf-token"]').content;
+    
+    fetch(form.action + '.json', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-CSRF-Token': csrfToken,
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      body: JSON.stringify({
+        time_entry: {
+          project_id: formData.get('time_entry[project_id]'),
+          issue_id: formData.get('time_entry[issue_id]') || null,
+          hours: formData.get('time_entry[hours]'),
+          activity_id: formData.get('time_entry[activity_id]'),
+          comments: formData.get('time_entry[comments]') || ''
+        }
+      }),
+      credentials: 'same-origin'
+    })
+    .then(response => {
+      if (!response.ok) {
+        return response.json().then(err => Promise.reject(err));
+      }
+      return response.json();
+    })
+    .then(data => {
+      if (data.success && data.time_entry) {
+        showMessage('success', data.message || '工数を登録しました');
+        addEntryToTable(data.time_entry);
+        resetForm();
+        // 成功したら2秒後にモーダルを閉じる
+        setTimeout(() => {
+          closeModal();
+        }, 2000);
+      }
+    })
+    .catch(error => {
+      let errorMessage = '登録に失敗しました';
+      if (error.errors) {
+        errorMessage = error.errors.join(', ');
+      }
+      showMessage('error', errorMessage);
+      console.error('Error:', error);
+    })
+    .finally(() => {
+      submitBtn.disabled = false;
+      submitBtn.value = <%= l(:button_create).to_json.html_safe %>;
+    });
+  });
+  
+  // 編集フォームの送信処理
+  const editForm = document.getElementById('edit_time_entry_form');
+  
+  editForm.addEventListener('submit', function(event) {
+    event.preventDefault();
+    
+    const submitBtn = document.getElementById('edit_submit_button');
+    submitBtn.disabled = true;
+    submitBtn.textContent = '更新中...';
+    
+    const formData = new FormData(editForm);
+    const entryId = document.getElementById('edit_entry_id').value;
+    const csrfToken = document.querySelector('meta[name="csrf-token"]').content;
+    
+    fetch('/kintai_kousu/' + entryId + '.json', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-CSRF-Token': csrfToken,
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      body: JSON.stringify({
+        time_entry: {
+          project_id: formData.get('time_entry[project_id]'),
+          issue_id: formData.get('time_entry[issue_id]') || null,
+          hours: formData.get('time_entry[hours]'),
+          activity_id: formData.get('time_entry[activity_id]'),
+          comments: formData.get('time_entry[comments]') || ''
+        }
+      }),
+      credentials: 'same-origin'
+    })
+    .then(response => {
+      if (!response.ok) {
+        return response.json().then(err => Promise.reject(err));
+      }
+      return response.json();
+    })
+    .then(data => {
+      if (data.success && data.time_entry) {
+        showEditMessage('success', data.message || '工数を更新しました');
+        updateEntryInTable(data.time_entry);
+        setTimeout(() => {
+          closeEditModal();
+        }, 2000);
+      }
+    })
+    .catch(error => {
+      let errorMessage = '更新に失敗しました';
+      if (error.errors) {
+        errorMessage = error.errors.join(', ');
+      }
+      showEditMessage('error', errorMessage);
+      console.error('Error:', error);
+    })
+    .finally(() => {
+      submitBtn.disabled = false;
+      submitBtn.textContent = <%= l(:button_save).to_json.html_safe %>;
+    });
+  });
+  
+  // 編集用チケット選択が変更されたときの処理
+  const editIssueSelect = document.getElementById('edit_issue_select');
+  editIssueSelect.addEventListener('change', function() {
+    if (this.value) {
+      const issue = issuesData[this.value];
+      if (issue) {
+        showEditIssueInfo(issue);
+      }
+    } else {
+      hideEditIssueInfo();
+    }
+  });
+});
+
+// テーブルの既存エントリを更新
+function updateEntryInTable(entry) {
+  const tbody = document.getElementById('existing-entries-tbody');
+  const rows = tbody.querySelectorAll('tr');
+  
+  rows.forEach(row => {
+    if (row.dataset.entryId == entry.id) {
+      // data属性を更新
+      row.dataset.projectId = entry.project.id;
+      row.dataset.issueId = entry.issue ? entry.issue.id : '';
+      row.dataset.hours = entry.hours;
+      row.dataset.activityId = entry.activity.id;
+      row.dataset.comments = entry.comments || '';
+      
+      // セルの内容を更新
+      const cells = row.querySelectorAll('td');
+      cells[0].innerHTML = '<a href="/projects/' + entry.project.id + '">' + entry.project.name + '</a>';
+      
+      if (entry.issue) {
+        cells[1].innerHTML = '<a href="/issues/' + entry.issue.id + '">#' + entry.issue.id + ' ' + entry.issue.subject + '</a>';
+      } else {
+        cells[1].innerHTML = '<em>-</em>';
+      }
+      
+      cells[2].textContent = parseFloat(entry.hours).toFixed(2);
+      cells[3].textContent = entry.activity.name;
+      cells[4].textContent = entry.comments || '';
+      
+      // ハイライト
+      row.style.backgroundColor = '#d4edda';
+      setTimeout(() => {
+        row.style.backgroundColor = '';
+      }, 3000);
+    }
+  });
+}
+
+// メッセージ表示
+function showMessage(type, message) {
+  const messageDiv = document.getElementById('form-message');
+  messageDiv.textContent = message;
+  messageDiv.style.display = 'block';
+  
+  if (type === 'success') {
+    messageDiv.style.backgroundColor = '#d4edda';
+    messageDiv.style.color = '#155724';
+    messageDiv.style.border = '1px solid #c3e6cb';
+  } else {
+    messageDiv.style.backgroundColor = '#f8d7da';
+    messageDiv.style.color = '#721c24';
+    messageDiv.style.border = '1px solid #f5c6cb';
+  }
+  
+  // 5秒後に自動的に非表示
+  setTimeout(() => {
+    messageDiv.style.display = 'none';
+  }, 5000);
+}
+
+// フォームをリセット
+function resetForm() {
+  document.getElementById('hours_input').value = '';
+  document.getElementById('time_entry_comments').value = '';
+  document.getElementById('issue_select').value = '';
+  hideIssueInfo();
+}
+
+// テーブルに新しいエントリーを追加
+function addEntryToTable(entry) {
+  const container = document.getElementById('existing-entries-container');
+  let table = document.getElementById('existing-entries-table');
+  let tbody = document.getElementById('existing-entries-tbody');
+  
+  // テーブルが存在しない場合は作成
+  if (!table) {
+    container.innerHTML = `
+      <div class="box" style="margin-top: 10px;">
+        <h3><%=l(:label_existing_entries)%></h3>
+        <table class="list" style="width: 100%;" id="existing-entries-table">
+          <thead>
+            <tr>
+              <th style="width: 20%;"><%=l(:field_project)%></th>
+              <th style="width: 25%;"><%=l(:field_issue)%></th>
+              <th style="width: 10%;"><%=l(:field_hours)%></th>
+              <th style="width: 15%;"><%=l(:field_activity)%></th>
+              <th style="width: 30%;"><%=l(:field_comments)%></th>
+            </tr>
+          </thead>
+          <tbody id="existing-entries-tbody"></tbody>
+        </table>
+      </div>
+    `;
+    tbody = document.getElementById('existing-entries-tbody');
+  }
+  
+  // 既存の行数をカウント（odd/evenクラス用）
+  const rowCount = tbody.querySelectorAll('tr').length;
+  const rowClass = rowCount % 2 === 0 ? 'odd' : 'even';
+  
+  // 新しい行を先頭に追加
+  const newRow = document.createElement('tr');
+  newRow.className = rowClass + ' time-entry-row';
+  newRow.style.cursor = 'pointer';
+  newRow.style.backgroundColor = '#ffffcc'; // ハイライト
+  newRow.title = 'クリックして編集';
+  
+  // data属性を設定
+  newRow.dataset.entryId = entry.id;
+  newRow.dataset.projectId = entry.project.id;
+  newRow.dataset.issueId = entry.issue ? entry.issue.id : '';
+  newRow.dataset.hours = entry.hours;
+  newRow.dataset.activityId = entry.activity.id;
+  newRow.dataset.comments = entry.comments || '';
+  
+  // プロジェクト列
+  const projectCell = document.createElement('td');
+  const projectLink = document.createElement('a');
+  projectLink.href = '/projects/' + entry.project.id;
+  projectLink.textContent = entry.project.name;
+  projectLink.target = '_blank';
+  projectCell.appendChild(projectLink);
+  newRow.appendChild(projectCell);
+  
+  // チケット列
+  const issueCell = document.createElement('td');
+  if (entry.issue) {
+    const issueLink = document.createElement('a');
+    issueLink.href = '/issues/' + entry.issue.id;
+    issueLink.textContent = '#' + entry.issue.id + ' ' + entry.issue.subject;
+    issueLink.target = '_blank';
+    issueCell.appendChild(issueLink);
+  } else {
+    const em = document.createElement('em');
+    em.textContent = '-';
+    issueCell.appendChild(em);
+  }
+  newRow.appendChild(issueCell);
+  
+  // 工数列
+  const hoursCell = document.createElement('td');
+  hoursCell.style.fontFamily = 'inherit';
+  hoursCell.textContent = parseFloat(entry.hours).toFixed(2);
+  newRow.appendChild(hoursCell);
+  
+  // 作業分類列
+  const activityCell = document.createElement('td');
+  activityCell.textContent = entry.activity.name;
+  newRow.appendChild(activityCell);
+  
+  // コメント列
+  const commentsCell = document.createElement('td');
+  commentsCell.textContent = entry.comments || '';
+  newRow.appendChild(commentsCell);
+  
+  // テーブルの先頭に追加
+  tbody.insertBefore(newRow, tbody.firstChild);
+  
+  // 3秒後にハイライトを解除
+  setTimeout(() => {
+    newRow.style.backgroundColor = '';
+  }, 3000);
+  
+  // odd/evenクラスを再計算
+  updateRowClasses();
+}
+
+// テーブルの行のodd/evenクラスを更新
+function updateRowClasses() {
+  const tbody = document.getElementById('existing-entries-tbody');
+  if (tbody) {
+    const rows = tbody.querySelectorAll('tr');
+    rows.forEach((row, index) => {
+      row.className = index % 2 === 0 ? 'odd' : 'even';
+    });
+  }
+}
+</script>
