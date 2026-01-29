@@ -11,3 +11,5 @@ Redmine::Plugin.register :redmine_kintai_kousu do
        if: Proc.new { User.current.logged? },
        before: :my_account
 end
+
+    require File.expand_path('lib/redmine_kintai_kousu/hooks', __dir__)

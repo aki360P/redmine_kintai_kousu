@@ -4,3 +4,13 @@ en:
   label_time_entry_new: "New Time Entry"
   label_existing_entries: "Existing Entries for This Day"
   day_names: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+  label_please_select: "Please select"
+  label_none: "None"
+  text_optional: "Optional"
+  text_select_a_project_first: "Please select a project first"
+  notice_successful_create: "Time entry was created successfully"
+  notice_successful_update: "Time entry was updated successfully"
+  notice_successful_delete: "Time entry was deleted successfully"
+  notice_failed_to_create_time_entry: "Failed to create time entry"
+  notice_failed_to_fetch_issues: "Failed to fetch issues"
+

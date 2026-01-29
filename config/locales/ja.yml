@@ -4,3 +4,13 @@ ja:
   label_time_entry_new: "工数登録"
   label_existing_entries: "この日の既存工数"
   day_names: ["日", "月", "火", "水", "木", "金", "土"]
+  label_please_select: "選択してください"
+  label_none: "なし"
+  text_optional: "オプション"
+  text_select_a_project_first: "プロジェクトを先に選択してください"
+  notice_successful_create: "工数を作成しました"
+  notice_successful_update: "工数を更新しました"
+  notice_successful_delete: "工数を削除しました"
+  notice_failed_to_create_time_entry: "工数の作成に失敗しました"
+  notice_failed_to_fetch_issues: "チケット情報の取得に失敗しました"
+

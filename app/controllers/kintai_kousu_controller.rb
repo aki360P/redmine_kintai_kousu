@@ -73,37 +73,71 @@ class KintaiKousuController < ApplicationController
     @existing_entries = TimeEntry
       .where(user_id: User.current.id, spent_on: @date)
       .includes(:project, :issue, :activity)
-      .order('created_on DESC')
+      .order('id ASC')
     
-    # アクティビティ一覧
-    @activities = TimeEntryActivity.active.order(:position)
-    
-    # ユーザーがメンバーのプロジェクト一覧
-    @projects = Project
-      .joins(:members)
-      .where("members.user_id = ?", User.current.id)
-      .where("projects.status = ?", Project::STATUS_ACTIVE)
-      .order("projects.name")
-      .distinct
-    
-    # ユーザーが担当のチケット一覧（プロジェクトごとに分類、クローズ済みも含む）
-    issues = Issue.visible
-      .joins(:project)
-      .where("issues.assigned_to_id = ?", User.current.id)
-      .where("projects.status = ?", Project::STATUS_ACTIVE)
-      .includes(:project, :status, :priority, :parent, :tracker)
-      .order("projects.name, issues.root_id, issues.lft")
-    
-    # プロジェクトごとにチケットをグループ化
-    @issues_by_project = {}
-    @projects.each do |project|
-      project_issues = issues.select { |i| i.project_id == project.id }
-      # ルートチケットのみを取得（子チケットは後で再帰的に表示）
-      @issues_by_project[project] = project_issues.select { |i| i.parent_id.nil? }
+    respond_to do |format|
+      format.html do
+        # アクティビティ一覧
+        @activities = TimeEntryActivity.active.order(:position)
+        
+        # ユーザーがメンバーのプロジェクト一覧
+        @projects = Project
+          .joins(:members)
+          .where("members.user_id = ?", User.current.id)
+          .where("projects.status = ?", Project::STATUS_ACTIVE)
+          .order("projects.name")
+          .distinct
+        
+        # ユーザーが担当のチケット一覧（プロジェクトごとに分類、クローズ済みも含む）
+        issues = Issue.visible
+          .joins(:project)
+          .where("issues.assigned_to_id = ?", User.current.id)
+          .where("projects.status = ?", Project::STATUS_ACTIVE)
+          .includes(:project, :status, :priority, :parent, :tracker)
+          .order("projects.name, issues.root_id, issues.lft")
+        
+        # プロジェクトごとにチケットをグループ化
+        @issues_by_project = {}
+        @projects.each do |project|
+          project_issues = issues.select { |i| i.project_id == project.id }
+          # ルートチケットのみを取得（子チケットは後で再帰的に表示）
+          @issues_by_project[project] = project_issues.select { |i| i.parent_id.nil? }
+        end
+        
+        # トラッカー一覧を取得（フィルター用）
+        @trackers = issues.map(&:tracker).uniq.sort_by(&:position)
+      end
+      
+      format.json do
+        entries_data = @existing_entries.map do |entry|
+          {
+            id: entry.id,
+            project: {
+              id: entry.project.id,
+              name: entry.project.name
+            },
+            issue: entry.issue ? {
+              id: entry.issue.id,
+              subject: entry.issue.subject
+            } : nil,
+            hours: entry.hours.to_f,
+            activity: entry.activity ? {
+              id: entry.activity.id,
+              name: entry.activity.name
+            } : nil,
+            comments: entry.comments,
+            spent_on: entry.spent_on,
+            created_on: entry.created_on
+          }
+        end
+        
+        render json: {
+          success: true,
+          entries: entries_data,
+          total: @existing_entries.sum(:hours).to_f
+        }
+      end
     end
-    
-    # トラッカー一覧を取得（フィルター用）
-    @trackers = issues.map(&:tracker).uniq.sort_by(&:position)
   end
   
   def create
@@ -114,61 +148,95 @@ class KintaiKousuController < ApplicationController
     
     respond_to do |format|
       if params[:time_entry]
-        project = Project.find(params[:time_entry][:project_id])
-        
-        time_entry = TimeEntry.new(
-          user: User.current,
-          project: project,
-          spent_on: @date,
-          hours: params[:time_entry][:hours],
-          activity_id: params[:time_entry][:activity_id],
-          comments: params[:time_entry][:comments]
-        )
-        
-        if params[:time_entry][:issue_id].present?
-          time_entry.issue_id = params[:time_entry][:issue_id]
-        end
-        
-        if time_entry.save
-          format.html do
-            flash[:notice] = l(:notice_successful_create)
-            redirect_to kintai_kousu_path(year: @year, month: @month)
+        begin
+          # プロジェクトの取得：issue_idがある場合はそこから、ない場合はパラメータから
+          project = nil
+          if params[:time_entry][:issue_id].present?
+            issue = Issue.find(params[:time_entry][:issue_id])
+            project = issue.project
+          elsif params[:time_entry][:project_id].present?
+            project = Project.find(params[:time_entry][:project_id])
           end
-          format.json do
-            render json: {
-              success: true,
-              message: l(:notice_successful_create),
-              time_entry: {
-                id: time_entry.id,
-                project: {
-                  id: time_entry.project.id,
-                  name: time_entry.project.name
-                },
-                issue: time_entry.issue ? {
-                  id: time_entry.issue.id,
-                  subject: time_entry.issue.subject
-                } : nil,
-                hours: time_entry.hours.to_f,
-                activity: {
-                  id: time_entry.activity.id,
-                  name: time_entry.activity.name
-                },
-                comments: time_entry.comments,
-                spent_on: time_entry.spent_on,
-                created_on: time_entry.created_on
-              }
-            }, status: :created
+          
+          # プロジェクトが見つからない場合はエラー
+          unless project
+            format.json do
+              render json: {
+                success: false,
+                errors: ['Project not found. Please select an issue or provide a project ID']
+              }, status: :bad_request
+            end
+            return
           end
-        else
-          format.html do
-            flash[:error] = time_entry.errors.full_messages.join(', ')
-            redirect_to action: 'show', year: @year, month: @month, day: @day
+          
+          time_entry = TimeEntry.new(
+            user: User.current,
+            project: project,
+            spent_on: @date,
+            hours: params[:time_entry][:hours],
+            activity_id: params[:time_entry][:activity_id],
+            comments: params[:time_entry][:comments]
+          )
+          
+          if params[:time_entry][:issue_id].present?
+            time_entry.issue_id = params[:time_entry][:issue_id]
           end
+          
+          if time_entry.save
+            format.html do
+              flash[:notice] = l(:notice_successful_create)
+              redirect_to kintai_kousu_path(year: @year, month: @month)
+            end
+            format.json do
+              render json: {
+                success: true,
+                message: l(:notice_successful_create),
+                time_entry: {
+                  id: time_entry.id,
+                  project: {
+                    id: time_entry.project.id,
+                    name: time_entry.project.name
+                  },
+                  issue: time_entry.issue ? {
+                    id: time_entry.issue.id,
+                    subject: time_entry.issue.subject
+                  } : nil,
+                  hours: time_entry.hours.to_f,
+                  activity: {
+                    id: time_entry.activity.id,
+                    name: time_entry.activity.name
+                  },
+                  comments: time_entry.comments,
+                  spent_on: time_entry.spent_on,
+                  created_on: time_entry.created_on
+                }
+              }, status: :created
+            end
+          else
+            format.html do
+              flash[:error] = time_entry.errors.full_messages.join(', ')
+              redirect_to action: 'show', year: @year, month: @month, day: @day
+            end
+            format.json do
+              render json: {
+                success: false,
+                errors: time_entry.errors.full_messages
+              }, status: :unprocessable_entity
+            end
+          end
+        rescue ActiveRecord::RecordNotFound => e
           format.json do
             render json: {
               success: false,
-              errors: time_entry.errors.full_messages
-            }, status: :unprocessable_entity
+              errors: ['Issue not found']
+            }, status: :not_found
+          end
+        rescue StandardError => e
+          format.json do
+            render json: {
+              success: false,
+              errors: [e.message]
+            }, status: :internal_server_error
           end
         end
       else
