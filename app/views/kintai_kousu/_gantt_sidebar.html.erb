@@ -499,9 +499,11 @@ document.addEventListener('DOMContentLoaded', function() {
     .then(result => {
       if (result.success) {
         showMessage('<%= l(:notice_successful_create) %>', 'success');
-        // フォームをリセット
-        form.reset();
-        document.getElementById('kintai_spent_on').value = new Date().toISOString().split('T')[0];
+        // 日付以外のフィールドをクリア（日付は保持）
+        document.getElementById('kintai_issue_id').value = '';
+        document.getElementById('kintai_hours').value = '';
+        document.getElementById('kintai_activity_id').value = '';
+        document.getElementById('kintai_comments').value = '';
         
         // 当日工数を再読み込み
         loadDailyEntries();
