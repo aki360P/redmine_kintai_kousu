@@ -355,16 +355,16 @@ document.addEventListener('DOMContentLoaded', function() {
           </table>
         `;
         entriesList.innerHTML = html;
-        totalSpan.textContent = total.toFixed(1) + 'h';
+        totalSpan.textContent = total.toFixed(2) + 'h';
       } else {
         entriesList.innerHTML = '<p class="loading-message">工数がありません</p>';
-        totalSpan.textContent = '0.0h';
+        totalSpan.textContent = '0.00h';
       }
     })
     .catch(error => {
       console.error('Error loading entries:', error);
       entriesList.innerHTML = '<p class="loading-message">読み込みに失敗しました</p>';
-      totalSpan.textContent = '0.0h';
+      totalSpan.textContent = '0.00h';
     });
   }
 

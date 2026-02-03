@@ -51,11 +51,11 @@
             <% hours = daily_hours[day] %>
             <% is_weekend = date.wday == 0 || date.wday == 6 %>
             <td style="text-align: center; padding: 4px 1px; <%= 'background-color: #fafafa;' if is_weekend %> <%= 'color: #999;' if hours == 0 %>">
-              <%= hours > 0 ? ("%.1f" % hours) : '-' %>
+              <%= hours > 0 ? ("%.2f" % hours) : '-' %>
             </td>
           <% end %>
           <td style="text-align: center; background-color: #f0f0f0; padding: 4px 2px;">
-            <%= "%.1f" % @project_totals[project] %>
+            <%= "%.2f" % @project_totals[project] %>
           </td>
         </tr>
       <% end %>
@@ -69,13 +69,13 @@
           <% hours = @daily_hours[day] %>
           <% is_weekend = date.wday == 0 || date.wday == 6 %>
           <td style="text-align: center; padding: 0; <%= 'background-color: #d8e8f0;' if is_weekend %>">
-            <%= link_to ("%.1f" % hours), 
+            <%= link_to ("%.2f" % hours), 
                         kintai_kousu_show_path(year: @year, month: @month, day: day),
                         style: 'text-decoration: none; display: block; width: 100%; height: 100%; padding: 4px 1px;' %>
           </td>
         <% end %>
         <td style="text-align: center; background-color: #d0e0f0; font-weight: bold; padding: 4px 2px;">
-          <%= "%.1f" % @total_hours %>
+          <%= "%.2f" % @total_hours %>
         </td>
       </tr>
     </tbody>
