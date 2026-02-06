@@ -1,6 +1,6 @@
 class KintaiKousuController < ApplicationController
   before_action :require_login
-  protect_from_forgery with: :null_session, only: [:create, :update, :destroy]
+  protect_from_forgery with: :null_session, only: [:create, :update, :destroy, :attendance_create]
 
   def index
     # 年月パラメータの取得（年→月の順）
@@ -61,6 +61,18 @@ class KintaiKousuController < ApplicationController
     @project_daily_hours.each do |project, daily_hours|
       @project_totals[project] = daily_hours.values.sum
     end
+
+    # 勤怠情報（日別）
+    @attendance_by_day = {}
+    (1..@last_day.day).each do |day|
+      @attendance_by_day[day] = nil
+    end
+
+    RkkKintai
+      .where(user_id: User.current.id, work_date: @first_day..@last_day)
+      .find_each do |record|
+        @attendance_by_day[record.work_date.day] = record
+      end
   end
   
   def show
@@ -341,6 +353,81 @@ class KintaiKousuController < ApplicationController
             success: false,
             errors: @time_entry.errors.full_messages
           }, status: :unprocessable_entity
+        end
+      end
+    end
+  end
+
+  def attendance_create
+    respond_to do |format|
+      begin
+        kintai_params = params.require(:kintai).permit(:work_date, :start_time, :end_time, :work_attribute)
+        work_date = Date.parse(kintai_params[:work_date])
+
+        record = RkkKintai.find_or_initialize_by(user_id: User.current.id, work_date: work_date)
+        record.start_time = kintai_params[:start_time]
+        record.end_time = kintai_params[:end_time]
+        record.work_attribute = kintai_params[:work_attribute]
+
+        if record.save
+          format.json do
+            render json: {
+              success: true,
+              kintai: {
+                id: record.id,
+                work_date: record.work_date,
+                start_time: record.start_time,
+                end_time: record.end_time,
+                work_attribute: record.work_attribute
+              }
+            }, status: :ok
+          end
+        else
+          format.json do
+            render json: {
+              success: false,
+              errors: record.errors.full_messages
+            }, status: :unprocessable_entity
+          end
+        end
+      rescue ActionController::ParameterMissing
+        format.json do
+          render json: { success: false, errors: ['No data provided'] }, status: :bad_request
+        end
+      rescue ArgumentError
+        format.json do
+          render json: { success: false, errors: ['Invalid date'] }, status: :bad_request
+        end
+      end
+    end
+  end
+
+  def attendance_show
+    @year = params[:year].to_i
+    @month = params[:month].to_i
+    @day = params[:day].to_i
+    @date = Date.new(@year, @month, @day)
+
+    respond_to do |format|
+      format.json do
+        record = RkkKintai.find_by(user_id: User.current.id, work_date: @date)
+        
+        if record
+          render json: {
+            success: true,
+            kintai: {
+              id: record.id,
+              work_date: record.work_date,
+              start_time: record.start_time,
+              end_time: record.end_time,
+              work_attribute: record.work_attribute
+            }
+          }
+        else
+          render json: {
+            success: true,
+            kintai: nil
+          }
         end
       end
     end

@@ -1,8 +1,8 @@
 Redmine::Plugin.register :redmine_kintai_kousu do
   name 'Redmine Kintai Kousu Plugin'
-  author 'Your Name'
+  author 'Akinori Iwasaki'
   description 'Time entry management plugin for Redmine'
-  version '0.1.0'
+  version '0.2.0'
   url 'https://github.com/yourusername/redmine_kintai_kousu'
   author_url 'https://github.com/yourusername'
 

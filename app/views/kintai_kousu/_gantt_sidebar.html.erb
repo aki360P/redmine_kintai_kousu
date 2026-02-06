@@ -1,7 +1,12 @@
 <br>
 
 <div id="kintai_gantt_sidebar" class="box">
-  <h3><%= l(:label_kintai_kousu) %></h3>
+  <div class="kintai-header">
+    <h3><%= l(:label_kintai_kousu) %></h3>
+    <button type="button" class="btn btn-primary" id="kintai_attendance_open">
+      勤怠入力
+    </button>
+  </div>
   
   <div class="kintai-entry-form">
     <% if User.current.logged? %>
@@ -85,9 +90,89 @@
   </div>
 </div>
 
+<!-- 勤怠入力モーダル -->
+<div id="kintai_attendance_modal" class="kintai-modal" aria-hidden="true">
+  <div class="kintai-modal-backdrop" id="kintai_attendance_backdrop"></div>
+  <div class="kintai-modal-content" role="dialog" aria-modal="true" aria-labelledby="kintai_attendance_title">
+    <div class="kintai-modal-header">
+      <h4 id="kintai_attendance_title">勤怠入力</h4>
+      <button type="button" class="kintai-modal-close" id="kintai_attendance_close" aria-label="閉じる">&times;</button>
+    </div>
+    <p class="help-text">日付は上の「日付」を使用します。</p>
+    <form id="kintai_attendance_form" class="kintai-form">
+      <div class="form-group">
+        <label for="kintai_attendance_date"><%= l(:field_spent_on) %></label>
+        <input
+          type="date"
+          id="kintai_attendance_date"
+          name="work_date"
+          class="form-control"
+          required>
+      </div>
+      <div class="form-group">
+        <label for="kintai_work_start">始業時刻 <span class="required">*</span></label>
+        <input
+          type="time"
+          id="kintai_work_start"
+          name="start_time"
+          class="form-control"
+          required>
+      </div>
+
+      <div class="form-group">
+        <label for="kintai_work_end">就業時刻 <span class="required">*</span></label>
+        <input
+          type="time"
+          id="kintai_work_end"
+          name="end_time"
+          class="form-control"
+          required>
+      </div>
+
+      <div class="form-group">
+        <label for="kintai_work_attribute">属性</label>
+        <select
+          id="kintai_work_attribute"
+          name="work_attribute"
+          class="form-control">
+          <option value="">-- 入力なし --</option>
+          <option value="休暇">休暇</option>
+          <option value="AM休">AM休</option>
+          <option value="PM休">PM休</option>
+          <option value="不就業">不就業</option>
+          <option value="忌引">忌引</option>
+          <option value="傷病">傷病</option>
+          <option value="休日出勤">休日出勤</option>
+        </select>
+      </div>
+
+      <div class="button-group">
+        <button type="submit" class="btn btn-secondary" id="kintai_attendance_submit_btn">
+          保存
+        </button>
+        <button type="button" class="btn" id="kintai_attendance_cancel_btn">
+          閉じる
+        </button>
+        <div id="kintai_attendance_message" class="kintai-message" style="display: none; margin-top: 10px;"></div>
+      </div>
+    </form>
+  </div>
+</div>
+
 <style>
 .kintai-entry-form {
   padding: 10px;
+}
+
+.kintai-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.kintai-header h3 {
+  margin: 0;
 }
 
 .form-group {
@@ -166,6 +251,54 @@
 
 .btn-secondary:hover {
   background-color: #5a6268 !important;
+}
+
+.kintai-modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+}
+
+.kintai-modal.open {
+  display: block;
+}
+
+.kintai-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.kintai-modal-content {
+  position: relative;
+  max-width: 520px;
+  margin: 8vh auto;
+  background: #fff;
+  border-radius: 6px;
+  padding: 16px 18px 12px 18px;
+  z-index: 1;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.2);
+}
+
+.kintai-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.kintai-modal-header h4 {
+  margin: 0;
+}
+
+.kintai-modal-close {
+  border: none;
+  background: none;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  color: #666;
 }
 
 .kintai-message {
@@ -293,6 +426,15 @@ document.addEventListener('DOMContentLoaded', function() {
   const kintaiSidebar = document.getElementById('kintai_gantt_sidebar');
   const kintaiKousuCreateUrl = "<%= kintai_kousu_path %>";
   const kintaiKousuShowUrl = "<%= kintai_kousu_show_path %>";
+  const kintaiAttendanceUrl = "<%= kintai_kousu_attendance_path %>";
+  const attendanceForm = document.getElementById('kintai_attendance_form');
+  const attendanceMessageDiv = document.getElementById('kintai_attendance_message');
+  const attendanceModal = document.getElementById('kintai_attendance_modal');
+  const attendanceOpenBtn = document.getElementById('kintai_attendance_open');
+  const attendanceCloseBtn = document.getElementById('kintai_attendance_close');
+  const attendanceBackdrop = document.getElementById('kintai_attendance_backdrop');
+  const attendanceCancelBtn = document.getElementById('kintai_attendance_cancel_btn');
+  const attendanceDateInput = document.getElementById('kintai_attendance_date');
 
   // 当日工数を読み込む関数
   function loadDailyEntries() {
@@ -368,11 +510,178 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 
+  const attendanceStartInput = document.getElementById('kintai_work_start');
+  const attendanceEndInput = document.getElementById('kintai_work_end');
+  const attendanceAttributeSelect = document.getElementById('kintai_work_attribute');
+
+  const attendanceDisableAttributes = ['休暇', '忌引', '不就業', '傷病'];
+  const attendanceRequireAttributes = ['休日出勤', 'AM休', 'PM休'];
+
+  function applyAttendanceRules(attributeValue) {
+    const shouldDisable = attendanceDisableAttributes.includes(attributeValue);
+    const shouldRequire = attendanceRequireAttributes.includes(attributeValue) || !shouldDisable;
+
+    attendanceStartInput.disabled = shouldDisable;
+    attendanceEndInput.disabled = shouldDisable;
+
+    attendanceStartInput.required = shouldRequire && !shouldDisable;
+    attendanceEndInput.required = shouldRequire && !shouldDisable;
+
+    if (shouldDisable) {
+      attendanceStartInput.value = '';
+      attendanceEndInput.value = '';
+    }
+  }
+
+  function validateAttendanceInputs() {
+    if (attendanceStartInput.disabled || attendanceEndInput.disabled) {
+      return true;
+    }
+
+    if (!attendanceStartInput.value || !attendanceEndInput.value) {
+      showMessage('始業時刻と就業時刻を入力してください', 'error', attendanceMessageDiv);
+      return false;
+    }
+
+    return true;
+  }
+
+  let isAttendanceDateSyncing = false;
+
+  function syncAttendanceDateFromMain() {
+    if (!attendanceDateInput || !spentOnInput) {
+      return;
+    }
+
+    isAttendanceDateSyncing = true;
+    attendanceDateInput.value = spentOnInput.value;
+    isAttendanceDateSyncing = false;
+  }
+
+  function syncMainDateFromAttendance() {
+    if (!attendanceDateInput || !spentOnInput || isAttendanceDateSyncing) {
+      return;
+    }
+
+    spentOnInput.value = attendanceDateInput.value;
+    spentOnInput.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  // 勤怠フォームをリセット
+  function resetAttendanceForm() {
+    attendanceStartInput.value = '';
+    attendanceEndInput.value = '';
+    attendanceAttributeSelect.value = '';
+    applyAttendanceRules('');
+  }
+
+  // 勤怠データを読み込む
+  function loadAttendanceData() {
+    const spentOn = spentOnInput.value;
+    if (!spentOn) {
+      resetAttendanceForm();
+      return;
+    }
+
+    const [year, month, day] = spentOn.split('-').map(Number);
+    const attendanceShowUrl = "<%= kintai_kousu_attendance_show_path %>";
+
+    fetch(`${attendanceShowUrl}?year=${year}&month=${month}&day=${day}`, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json'
+      }
+    })
+    .then(response => {
+      if (response.ok) {
+        return response.json();
+      } else {
+        throw new Error('Failed to load attendance data');
+      }
+    })
+    .then(data => {
+      if (data.success && data.kintai) {
+        // データを入力フィールドに反映
+        attendanceStartInput.value = data.kintai.start_time || '';
+        attendanceEndInput.value = data.kintai.end_time || '';
+        attendanceAttributeSelect.value = data.kintai.work_attribute || '';
+        applyAttendanceRules(attendanceAttributeSelect.value);
+      } else {
+        // データがない場合はリセット
+        resetAttendanceForm();
+      }
+    })
+    .catch(error => {
+      console.error('Error loading attendance data:', error);
+      resetAttendanceForm();
+    });
+  }
+
+  function openAttendanceModal() {
+    if (!attendanceModal) {
+      return;
+    }
+
+    attendanceModal.classList.add('open');
+    attendanceModal.setAttribute('aria-hidden', 'false');
+    syncAttendanceDateFromMain();
+    loadAttendanceData();
+  }
+
+  function closeAttendanceModal() {
+    if (!attendanceModal) {
+      return;
+    }
+
+    attendanceModal.classList.remove('open');
+    attendanceModal.setAttribute('aria-hidden', 'true');
+  }
+
+  if (attendanceOpenBtn) {
+    attendanceOpenBtn.addEventListener('click', openAttendanceModal);
+  }
+
+  if (attendanceCloseBtn) {
+    attendanceCloseBtn.addEventListener('click', closeAttendanceModal);
+  }
+
+  if (attendanceCancelBtn) {
+    attendanceCancelBtn.addEventListener('click', closeAttendanceModal);
+  }
+
+  if (attendanceBackdrop) {
+    attendanceBackdrop.addEventListener('click', closeAttendanceModal);
+  }
+
+  if (attendanceDateInput) {
+    attendanceDateInput.addEventListener('change', function() {
+      syncMainDateFromAttendance();
+      loadAttendanceData();
+    });
+  }
+
+  document.addEventListener('keydown', function(event) {
+    if (event.key === 'Escape') {
+      closeAttendanceModal();
+    }
+  });
+
+  if (attendanceAttributeSelect) {
+    attendanceAttributeSelect.addEventListener('change', function() {
+      applyAttendanceRules(attendanceAttributeSelect.value);
+    });
+  }
+
   // 日付変更時に自動読み込み
-  spentOnInput.addEventListener('change', loadDailyEntries);
+  spentOnInput.addEventListener('change', function() {
+    loadDailyEntries();
+    loadAttendanceData();
+    syncAttendanceDateFromMain();
+  });
 
   // 初期読み込み
   loadDailyEntries();
+  loadAttendanceData();
 
   // サイドバーをスクロールに追従
   if (kintaiSidebar) {
@@ -515,14 +824,75 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   });
 
-  function showMessage(message, type) {
-    messageDiv.textContent = message;
-    messageDiv.className = `kintai-message ${type}`;
-    messageDiv.style.display = 'block';
+  // 勤怠保存
+  if (attendanceForm) {
+    attendanceForm.addEventListener('submit', function(e) {
+      e.preventDefault();
+
+      const workDate = attendanceDateInput ? attendanceDateInput.value : spentOnInput.value;
+      const startTime = attendanceStartInput.value;
+      const endTime = attendanceEndInput.value;
+      const workAttribute = attendanceAttributeSelect.value;
+
+      if (!validateAttendanceInputs()) {
+        return;
+      }
+
+      const payload = {
+        kintai: {
+          work_date: workDate,
+          start_time: startTime,
+          end_time: endTime,
+          work_attribute: workAttribute
+        }
+      };
+
+      fetch(kintaiAttendanceUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || ''
+        },
+        body: JSON.stringify(payload)
+      })
+      .then(response => {
+        if (response.status === 200 || response.status === 201) {
+          return response.json().then(data => ({ success: true, data }));
+        }
+        return response.json().then(data => {
+          throw new Error(data.errors ? data.errors.join(', ') : '保存に失敗しました');
+        });
+      })
+      .then(result => {
+        if (result.success) {
+          showMessage('勤怠を保存しました', 'success', attendanceMessageDiv);
+          // セレクトをデフォルト値にリセット
+          attendanceAttributeSelect.value = '';
+          applyAttendanceRules('');
+          setTimeout(() => {
+            closeAttendanceModal();
+          }, 800);
+        }
+      })
+      .catch(error => {
+        console.error('Attendance save error:', error);
+        showMessage(error.message || '保存に失敗しました', 'error', attendanceMessageDiv);
+      });
+    });
+  }
+
+  function showMessage(message, type, targetDiv = messageDiv) {
+    if (!targetDiv) {
+      return;
+    }
+
+    targetDiv.textContent = message;
+    targetDiv.className = `kintai-message ${type}`;
+    targetDiv.style.display = 'block';
     
     if (type === 'success') {
       setTimeout(() => {
-        messageDiv.style.display = 'none';
+        targetDiv.style.display = 'none';
       }, 5000);
     }
   }
