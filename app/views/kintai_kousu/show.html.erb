@@ -4,7 +4,7 @@
   <% next_date = @date + 1 %>
   <%= link_to '« 前日', kintai_kousu_show_path(year: prev_date.year, month: prev_date.month, day: prev_date.day), class: 'icon icon-arrow-left', style: 'margin-right: 5px; text-decoration: none;' %>
   <%= link_to '翌日 »', kintai_kousu_show_path(year: next_date.year, month: next_date.month, day: next_date.day), class: 'icon icon-arrow-right', style: 'margin-right: 10px; text-decoration: none;' %>
-  <%= link_to l(:button_back), kintai_kousu_path(year: @year, month: @month), class: 'icon icon-cancel', style: 'text-decoration: none;' %>
+  <%= link_to l(:button_back), "#{kintai_kousu_path}?year=#{@year}&month=#{@month}", class: 'icon icon-cancel', style: 'text-decoration: none;' %>
 </div>
 
 <!-- この日の既存工数 -->

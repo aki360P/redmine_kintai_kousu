@@ -201,7 +201,7 @@ class KintaiKousuController < ApplicationController
           if time_entry.save
             format.html do
               flash[:notice] = l(:notice_successful_create)
-              redirect_to kintai_kousu_path(year: @year, month: @month)
+              redirect_to "#{kintai_kousu_path}?year=#{@year}&month=#{@month}"
             end
             format.json do
               render json: {
@@ -256,7 +256,7 @@ class KintaiKousuController < ApplicationController
           end
         end
       else
-        format.html { redirect_to kintai_kousu_path(year: @year, month: @month) }
+        format.html { redirect_to "#{kintai_kousu_path}?year=#{@year}&month=#{@month}" }
         format.json { render json: { success: false, errors: ['No data provided'] }, status: :bad_request }
       end
     end

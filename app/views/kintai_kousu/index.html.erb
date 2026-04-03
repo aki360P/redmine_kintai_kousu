@@ -15,9 +15,9 @@
          next_year += 1
        end
     %>
-    <%= link_to "<<", kintai_kousu_path(year: prev_year, month: prev_month), class: 'icon icon-previous' %>
+    <%= link_to "<<", "#{kintai_kousu_path}?year=#{prev_year}&month=#{prev_month}", class: 'icon icon-previous' %>
     <span style="margin: 0 10px;"><%= @year %>年 <%= @month %>月</span>
-    <%= link_to ">>", kintai_kousu_path(year: next_year, month: next_month), class: 'icon icon-next' %>
+    <%= link_to ">>", "#{kintai_kousu_path}?year=#{next_year}&month=#{next_month}", class: 'icon icon-next' %>
   </div>
 
   <table class="list time-entries" style="width: 100%; table-layout: fixed;">
