@@ -3,6 +3,8 @@ class KintaiKousuController < ApplicationController
   protect_from_forgery with: :null_session, only: [:create, :update, :destroy, :attendance_create]
 
   def index
+    @user = User.current
+
     # 年月パラメータの取得（年→月の順）
     @year = params[:year] ? params[:year].to_i : Date.today.year
     @month = params[:month] ? params[:month].to_i : Date.today.month
@@ -76,6 +78,8 @@ class KintaiKousuController < ApplicationController
   end
   
   def show
+    @user = User.current
+
     @year = params[:year].to_i
     @month = params[:month].to_i
     @day = params[:day].to_i
