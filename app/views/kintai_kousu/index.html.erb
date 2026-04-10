@@ -1,6 +1,7 @@
 <h2><%=l(:label_kintai_kousu)%> (<%= @year %>年<%= @month %>月 - <%= @user.name %>)</h2>
 
 <div style="overflow-x: auto;">
+  <%= render 'attendance_combined' %>
   <div class="contextual">
     <% prev_month = @month - 1
        prev_year = @year
@@ -27,10 +28,12 @@
         <% (1..@last_day.day).each do |day| %>
           <% date = Date.new(@year, @month, day) %>
           <th style="text-align: center; padding: 4px 1px;">
-            <%= day %><br>
-            <span style="font-size: 0.8em; font-weight: normal;">
-              <%= l(:day_names)[date.wday][0] %>
-            </span>
+            <a href="#" class="kintai-open-attendance" data-day="<%= day %>" style="display:block;  color: #0056b3;">
+              <%= day %><br>
+              <span style="font-size: 0.8em; font-weight: normal; color: #0056b3;">
+                <%= l(:day_names)[date.wday][0] %>
+              </span>
+            </a>
           </th>
         <% end %>
         <th style="text-align: center; width: 60px; background-color: #f0f0f0; font-weight: bold; padding: 4px 2px;">
@@ -129,10 +132,12 @@
         <% (1..@last_day.day).each do |day| %>
           <% date = Date.new(@year, @month, day) %>
           <td style="text-align: center; padding: 4px 1px; background-color: #f6f6f6; font-weight: bold;">
-            <%= day %><br>
-            <span style="font-size: 0.8em; font-weight: normal;">
-              <%= l(:day_names)[date.wday][0] %>
-            </span>
+            <%= link_to "#{kintai_kousu_show_path}?year=#{@year}&month=#{@month}&day=#{day}", style: 'text-decoration: display: block; width: 100%; height: 100%;' do %>
+              <%= day %><br>
+              <span style="font-size: 0.8em; font-weight: normal;">
+                <%= l(:day_names)[date.wday][0] %>
+              </span>
+            <% end %>
           </td>
         <% end %>
         <td style="text-align: center; background-color: #f0f0f0; padding: 4px 2px;">-</td>
@@ -165,9 +170,7 @@
           <% hours = @daily_hours[day] %>
           <% is_weekend = date.wday == 0 || date.wday == 6 %>
           <td style="text-align: center; padding: 0; <%= 'background-color: #d8e8f0;' if is_weekend %>">
-            <%= link_to ("%.2f" % hours), 
-                        kintai_kousu_show_path(year: @year, month: @month, day: day),
-                        style: 'text-decoration: none; display: block; width: 100%; height: 100%; padding: 4px 1px;' %>
+            <%= "%.2f" % hours %>
           </td>
         <% end %>
         <td style="text-align: center; background-color: #d0e0f0; font-weight: bold; padding: 4px 2px;">
@@ -189,6 +192,42 @@
 </script>
 
 <%= javascript_include_tag 'kintai_attendance_calc', plugin: 'redmine_kintai_kousu' %>
+
+<script>
+window.addEventListener('load', function() {
+  const year = <%= @year %>;
+  const month = <%= @month %>;
+  function pad(n){ return n.toString().padStart(2, '0'); }
+
+  // event delegation: handle clicks even if elements are added later
+  document.addEventListener('click', function(e) {
+    const el = e.target.closest('.kintai-open-attendance');
+    if (!el) return;
+    e.preventDefault();
+    const day = el.dataset.day;
+    if (!day) return;
+    const dateStr = year + '-' + pad(month) + '-' + pad(day);
+
+    const spentOn = document.getElementById('kintai_spent_on');
+    if (spentOn) {
+      spentOn.value = dateStr;
+      spentOn.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    const attendanceDateInput = document.getElementById('kintai_attendance_date');
+    if (attendanceDateInput) {
+      attendanceDateInput.value = dateStr;
+      attendanceDateInput.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    const attendanceModal = document.getElementById('kintai_attendance_modal');
+    if (attendanceModal) {
+      attendanceModal.classList.add('open');
+      attendanceModal.setAttribute('aria-hidden', 'false');
+    }
+  });
+});
+</script>
 
 <br>
 
