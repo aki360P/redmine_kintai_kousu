@@ -132,7 +132,7 @@
         <% (1..@last_day.day).each do |day| %>
           <% date = Date.new(@year, @month, day) %>
           <td style="text-align: center; padding: 4px 1px; background-color: #f6f6f6; font-weight: bold;">
-            <%= link_to "#{kintai_kousu_show_path}?year=#{@year}&month=#{@month}&day=#{day}", style: 'text-decoration: display: block; width: 100%; height: 100%;' do %>
+            <%= link_to "#{kintai_kousu_show_path}?year=#{@year}&month=#{@month}&day=#{day}", class: 'kintai-open-show', style: 'text-decoration: display: block; width: 100%; height: 100%;' do %>
               <%= day %><br>
               <span style="font-size: 0.8em; font-weight: normal;">
                 <%= l(:day_names)[date.wday][0] %>
@@ -152,7 +152,9 @@
             <% hours = daily_hours[day] %>
             <% is_weekend = date.wday == 0 || date.wday == 6 %>
             <td style="text-align: center; padding: 4px 1px; <%= 'background-color: #fafafa;' if is_weekend %> <%= 'color: #999;' if hours == 0 %>">
-              <%= hours > 0 ? ("%.2f" % hours) : '-' %>
+              <%= link_to "#{kintai_kousu_show_path}?year=#{@year}&month=#{@month}&day=#{day}&project_id=#{project.id}", class: 'kintai-open-show', style: 'display:block; width:100%; height:100%; color: inherit; text-decoration: none;' do %>
+                <%= hours > 0 ? ("%.2f" % hours) : '-' %>
+              <% end %>
             </td>
           <% end %>
           <td style="text-align: center; background-color: #f0f0f0; padding: 4px 2px;">
@@ -189,47 +191,282 @@
       work_attribute: record&.work_attribute.to_s
     }
   }.to_json.html_safe %>;
+  window.kintaiYear = <%= @year %>;
+  window.kintaiMonth = <%= @month %>;
+
+
+
+(function(){
+  function pad(n){ return n.toString().padStart(2,'0'); }
+  try{ console.debug('[kintai_kousu_modals] script loaded'); }catch(e){}
+
+  // Attendance cell click (uses window.kintaiYear / window.kintaiMonth set in view)
+  document.addEventListener('click', function(e){
+    var el = e.target.closest('.kintai-open-attendance');
+    if (!el) return;
+    e.preventDefault();
+    var day = el.dataset.day;
+    if (!day) return;
+    var year = window.kintaiYear;
+    var month = window.kintaiMonth;
+    var dateStr = year + '-' + pad(month) + '-' + pad(day);
+
+    var spentOn = document.getElementById('kintai_spent_on');
+    if (spentOn) { spentOn.value = dateStr; spentOn.dispatchEvent(new Event('change', { bubbles: true })); }
+
+    var attendanceDateInput = document.getElementById('kintai_attendance_date');
+    if (attendanceDateInput) { attendanceDateInput.value = dateStr; attendanceDateInput.dispatchEvent(new Event('change', { bubbles: true })); }
+
+    var attendanceModal = document.getElementById('kintai_attendance_modal');
+    if (attendanceModal) { attendanceModal.classList.add('open'); attendanceModal.setAttribute('aria-hidden','false'); }
+  });
+
+  // Open modal directly when project/date cell clicked (no AJAX)
+  document.addEventListener('click', function(e){
+    try{
+      var a = e.target.closest('.kintai-open-show');
+      if(!a) return;
+      e.preventDefault();
+      console.debug('[kintai_kousu_modals] .kintai-open-show clicked', a.href, a);
+    }catch(err){ console.error('[kintai_kousu_modals] click handler error', err); return; }
+    var url = a.href;
+    // parse params
+    var params = (new URL(url, window.location.href)).searchParams;
+    var projectId = params.get('project_id');
+    var year = params.get('year');
+    var month = params.get('month');
+    var day = params.get('day');
+    // set date fields if present
+    var dateStr = null;
+    if (year && month && day) {
+      dateStr = year + '-' + pad(month) + '-' + pad(day);
+    }
+
+    var spentOnEls = [document.getElementById('kintai_spent_on'), document.getElementById('time_entry_spent_on'), document.getElementById('kintai_timeentry_spent_on')];
+    spentOnEls.forEach(function(el){ if(el && dateStr) { el.value = dateStr; el.dispatchEvent(new Event('change', { bubbles: true })); } });
+
+    if (projectId) {
+      var projectSelect = document.getElementById('project_select') || document.getElementById('edit_project_select');
+      if (projectSelect) { projectSelect.value = projectId; }
+      console.debug('[kintai_kousu_modals] projectId set to', projectId);
+    }
+
+    // open the modal already present in the page
+    try{
+      if(typeof openModal === 'function'){
+        console.debug('[kintai_kousu_modals] calling openModal()');
+        openModal();
+      } else {
+        var m = document.getElementById('time-entry-modal'); if(m) m.style.display = 'block';
+      }
+    }catch(err){ console.error('[kintai_kousu_modals] error opening modal', err); }
+  });
+
+  // The following functions mirror modal-related behavior from the view
+  // They assume the view still defines `issuesData` and `KintaiLabels` globals.
+
+  function openModal(){ var m = document.getElementById('time-entry-modal'); if(m){ m.style.display='block'; document.body.style.overflow='hidden'; }}
+  function closeModal(){ var m = document.getElementById('time-entry-modal'); if(m){ m.style.display='none'; document.body.style.overflow='auto'; resetForm(); }}
+  function openEditModal(){ var m = document.getElementById('edit-time-entry-modal'); if(m){ m.style.display='block'; document.body.style.overflow='hidden'; }}
+  function closeEditModal(){ var m = document.getElementById('edit-time-entry-modal'); if(m){ m.style.display='none'; document.body.style.overflow='auto'; resetEditForm(); }}
+
+  function resetForm(){ var h = document.getElementById('hours_input'); if(h) h.value=''; var c = document.getElementById('comments_input'); if(c) c.value=''; var is = document.getElementById('issue_select'); if(is) is.value=''; hideIssueInfo(); }
+  function resetEditForm(){ var h = document.getElementById('edit_hours_input'); if(h) h.value=''; var c = document.getElementById('edit_comments_input'); if(c) c.value=''; var is = document.getElementById('edit_issue_select'); if(is) is.value=''; hideEditIssueInfo(); }
+
+  function hideIssueInfo(){ var d = document.getElementById('selected_issue_info'); if(d) d.style.display='none'; }
+  function hideEditIssueInfo(){ var d = document.getElementById('edit_selected_issue_info'); if(d) d.style.display='none'; }
+
+  function showIssueInfo(issue){ var infoDiv = document.getElementById('selected_issue_info'); if(!infoDiv) return; var t = document.getElementById('issue_tracker'); var n = document.getElementById('issue_number'); var s = document.getElementById('issue_subject'); var trackerName = issue && (issue.trackerName || issue.tracker || issue.tracker_name) || ''; if(t) t.textContent = trackerName; if(n) n.textContent = issue.id; if(s) s.textContent = issue.subject; infoDiv.style.display='block'; }
+  function showEditIssueInfo(issue){ var infoDiv = document.getElementById('edit_selected_issue_info'); if(!infoDiv) return; var t = document.getElementById('edit_issue_tracker'); var n = document.getElementById('edit_issue_number'); var s = document.getElementById('edit_issue_subject'); var trackerName = issue && (issue.trackerName || issue.tracker || issue.tracker_name) || ''; if(t) t.textContent = trackerName; if(n) n.textContent = issue.id; if(s) s.textContent = issue.subject; infoDiv.style.display='block'; }
+
+  function findIssueById(id){ if(!id) return null; var src = window.issuesData || {}; if(src[id]) return src[id]; for(var k in src){ if(!Object.prototype.hasOwnProperty.call(src,k)) continue; var v = src[k]; if(Array.isArray(v)){ for(var i=0;i<v.length;i++){ if(String(v[i].id) === String(id)) return v[i]; } } else if(v && v.id && String(v.id) === String(id)){ return v; } } return null; }
+
+  function updateIssues(projectId){ var select = document.getElementById('issue_select'); if(!select) return; select.innerHTML = '<option value=""></option>'; if(!projectId){ hideIssueInfo(); return; } var src = window.issuesData || {}; var projectIssues = [];
+    // If issue_select is not a <select>, skip populating options (we use text input)
+    if(!select.tagName || select.tagName.toLowerCase() !== 'select') { hideIssueInfo(); return; }
+    if(src[projectId] && Array.isArray(src[projectId])){ projectIssues = src[projectId]; }
+    else { // try flattening
+      Object.values(src).forEach(function(v){ if(Array.isArray(v)){ projectIssues = projectIssues.concat(v.filter(function(issue){ return String(issue.projectId) === String(projectId) || issue.projectId == projectId; })); } });
+    }
+    projectIssues.forEach(function(issue){ var option = document.createElement('option'); option.value = issue.id; option.textContent = (issue.id || '') + ' ' + (issue.subject || ''); select.appendChild(option); }); }
+
+  function updateEditIssues(projectId){ var select = document.getElementById('edit_issue_select'); if(!select) return; select.innerHTML = '<option value=""></option>'; if(!projectId){ hideEditIssueInfo(); return; } var src = window.issuesData || {}; var projectIssues = [];
+    // If edit_issue_select is not a <select>, skip populating options (we use text input)
+    if(!select.tagName || select.tagName.toLowerCase() !== 'select') { hideEditIssueInfo(); return; }
+    if(src[projectId] && Array.isArray(src[projectId])){ projectIssues = src[projectId]; }
+    else { Object.values(src).forEach(function(v){ if(Array.isArray(v)){ projectIssues = projectIssues.concat(v.filter(function(issue){ return String(issue.projectId) === String(projectId) || issue.projectId == projectId; })); } }); }
+    projectIssues.forEach(function(issue){ var option = document.createElement('option'); option.value = issue.id; option.textContent = (issue.id || '') + ' ' + (issue.subject || ''); select.appendChild(option); }); }
+
+  function editTimeEntry(id, projectId, issueId, hours, activityId, comments){ var eid = document.getElementById('edit_entry_id'); if(eid) eid.value = id; var psel = document.getElementById('edit_project_select'); if(psel) psel.value = projectId; var hv = hours; if(typeof hv === 'string' && hv.includes('/')){ var parts = hv.split('/'); hv = parseFloat(parts[0]) / parseFloat(parts[1]); } var h = document.getElementById('edit_hours_input'); if(h) h.value = parseFloat(hv); var a = document.getElementById('edit_activity_select'); if(a) a.value = activityId; var c = document.getElementById('edit_comments_input'); if(c) c.value = comments || ''; updateEditIssues(projectId); setTimeout(function(){ if(issueId){ var isel = document.getElementById('edit_issue_select'); if(isel) isel.value = issueId; var issue = (window.issuesData||{})[issueId]; if(issue) showEditIssueInfo(issue); } }, 100); openEditModal(); }
+  function editTimeEntry(id, projectId, issueId, hours, activityId, comments){ var eid = document.getElementById('edit_entry_id'); if(eid) eid.value = id; var psel = document.getElementById('edit_project_select'); if(psel) psel.value = projectId; var hv = hours; if(typeof hv === 'string' && hv.includes('/')){ var parts = hv.split('/'); hv = parseFloat(parts[0]) / parseFloat(parts[1]); } var h = document.getElementById('edit_hours_input'); if(h) h.value = parseFloat(hv); var a = document.getElementById('edit_activity_select'); if(a) a.value = activityId; var c = document.getElementById('edit_comments_input'); if(c) c.value = comments || ''; updateEditIssues(projectId); setTimeout(function(){ if(issueId){ var isel = document.getElementById('edit_issue_select'); if(isel) isel.value = issueId; var issue = findIssueById(issueId); if(issue) showEditIssueInfo(issue); } }, 100); openEditModal(); }
+
+  function deleteTimeEntry(){ if(!confirm('この工数を削除しますか？')) return; var entryId = document.getElementById('edit_entry_id').value; var csrfToken = document.querySelector('meta[name="csrf-token"]').content; fetch('/kintai_kousu/' + entryId + '.json', { method: 'DELETE', headers: { 'X-CSRF-Token': csrfToken, 'X-Requested-With': 'XMLHttpRequest' }, credentials: 'include' }).then(function(response){ return response.json(); }).then(function(data){ if(data.success){ showEditMessage('success', data.message || '工数を削除しました'); removeEntryFromTable(entryId); setTimeout(function(){ closeEditModal(); }, 1500); } }).catch(function(err){ showEditMessage('error', '削除に失敗しました'); console.error('Error:', err); }); }
+
+  function removeEntryFromTable(entryId){ var tbody = document.getElementById('existing-entries-tbody'); if(!tbody) return; var rows = tbody.querySelectorAll('tr'); rows.forEach(function(row){ if(row.dataset.entryId == entryId){ row.remove(); } }); updateRowClasses(); }
+
+  function showEditMessage(type, message){ var messageDiv = document.getElementById('edit-form-message'); if(!messageDiv) return; messageDiv.textContent = message; messageDiv.style.display = 'block'; if(type === 'success'){ messageDiv.style.backgroundColor = '#d4edda'; messageDiv.style.color = '#155724'; messageDiv.style.border = '1px solid #c3e6cb'; } else { messageDiv.style.backgroundColor = '#f8d7da'; messageDiv.style.color = '#721c24'; messageDiv.style.border = '1px solid #f5c6cb'; } setTimeout(function(){ messageDiv.style.display = 'none'; }, 5000); }
+
+  function showMessage(type, message){ var messageDiv = document.getElementById('form-message'); if(!messageDiv){ messageDiv = document.createElement('div'); messageDiv.id = 'form-message'; messageDiv.style.display = 'none'; messageDiv.style.position = 'fixed'; messageDiv.style.top = '10px'; messageDiv.style.left = '50%'; messageDiv.style.transform = 'translateX(-50%)'; messageDiv.style.zIndex = '10002'; messageDiv.style.padding = '8px 12px'; messageDiv.style.borderRadius = '4px'; document.body.appendChild(messageDiv); } messageDiv.textContent = message; messageDiv.style.display = 'block'; if(type === 'success'){ messageDiv.style.backgroundColor = '#d4edda'; messageDiv.style.color = '#155724'; messageDiv.style.border = '1px solid #c3e6cb'; } else { messageDiv.style.backgroundColor = '#f8d7da'; messageDiv.style.color = '#721c24'; messageDiv.style.border = '1px solid #f5c6cb'; } setTimeout(function(){ messageDiv.style.display = 'none'; }, 5000); }
+
+  function addEntryToTable(entry){ var container = document.getElementById('existing-entries-container'); if(!container) return; var table = document.getElementById('existing-entries-table'); var tbody = document.getElementById('existing-entries-tbody'); if(!table){ container.innerHTML = '\n      <div class="box" style="margin-top: 10px;">\n        <h3>' + (window.KintaiLabels && window.KintaiLabels.existing_entries_title ? window.KintaiLabels.existing_entries_title : '既存エントリ') + '</h3>\n        <table class="list" style="width: 100%;" id="existing-entries-table">\n          <thead>\n            <tr>\n              <th style="width: 20%;">プロジェクト</th>\n              <th style="width: 25%;">チケット</th>\n              <th style="width: 10%;">時間</th>\n              <th style="width: 15%;">作業分類</th>\n              <th style="width: 30%;">コメント</th>\n            </tr>\n          </thead>\n          <tbody id="existing-entries-tbody"></tbody>\n        </table>\n      </div>\n    '; tbody = document.getElementById('existing-entries-tbody'); }
+    var rowCount = tbody.querySelectorAll('tr').length; var rowClass = rowCount % 2 === 0 ? 'odd' : 'even'; var newRow = document.createElement('tr'); newRow.className = rowClass + ' time-entry-row'; newRow.style.cursor = 'pointer'; newRow.style.backgroundColor = '#ffffcc'; newRow.title = 'クリックして編集'; newRow.dataset.entryId = entry.id; newRow.dataset.projectId = entry.project.id; newRow.dataset.issueId = entry.issue ? entry.issue.id : ''; newRow.dataset.hours = entry.hours; newRow.dataset.activityId = entry.activity.id; newRow.dataset.comments = entry.comments || ''; var projectCell = document.createElement('td'); var projectLink = document.createElement('a'); projectLink.href = '/projects/' + entry.project.id; projectLink.textContent = entry.project.name; projectLink.target = '_blank'; projectCell.appendChild(projectLink); newRow.appendChild(projectCell); var issueCell = document.createElement('td'); if(entry.issue){ var issueLink = document.createElement('a'); issueLink.href = '/issues/' + entry.issue.id; issueLink.textContent = entry.issue.id + ' ' + entry.issue.subject; issueLink.target = '_blank'; issueCell.appendChild(issueLink); } else { var em = document.createElement('em'); em.textContent = '-'; issueCell.appendChild(em); } newRow.appendChild(issueCell); var hoursCell = document.createElement('td'); hoursCell.style.fontFamily = 'inherit'; hoursCell.textContent = parseFloat(entry.hours).toFixed(2); newRow.appendChild(hoursCell); var activityCell = document.createElement('td'); activityCell.textContent = entry.activity.name; newRow.appendChild(activityCell); var commentsCell = document.createElement('td'); commentsCell.textContent = entry.comments || ''; newRow.appendChild(commentsCell); var tbodyRef = document.getElementById('existing-entries-tbody'); tbodyRef.insertBefore(newRow, tbodyRef.firstChild); setTimeout(function(){ newRow.style.backgroundColor = ''; }, 3000); updateRowClasses(); }
+
+  function updateRowClasses(){ var tbody = document.getElementById('existing-entries-tbody'); if(!tbody) return; var rows = tbody.querySelectorAll('tr'); rows.forEach(function(row, index){ row.className = index % 2 === 0 ? 'odd' : 'even'; }); }
+
+  // Click handlers for existing entry rows to open edit modal
+  document.addEventListener('click', function(e){ var row = e.target.closest('.time-entry-row'); if(row){ var entryId = row.dataset.entryId; var projectId = row.dataset.projectId; var issueId = row.dataset.issueId; var hours = row.dataset.hours; var activityId = row.dataset.activityId; var comments = row.dataset.comments; editTimeEntry(entryId, projectId, issueId === '' ? null : issueId, hours, activityId, comments); } });
+
+  // Delete button in edit modal
+  document.addEventListener('click', function(e){ var del = e.target.closest('.kintai-delete-entry'); if(del){ deleteTimeEntry(); } });
+
+  // DOM ready: wire form submissions and selectors
+  document.addEventListener('DOMContentLoaded', function(){
+    var issueSelect = document.getElementById('issue_select'); if(issueSelect){ issueSelect.addEventListener('change', function(){ if(this.value){ var issue = findIssueById(this.value); if(issue) showIssueInfo(issue); } else { hideIssueInfo(); } }); }
+
+    var form = document.getElementById('time_entry_form') || document.getElementById('kintai_create_form');
+    if(form){
+      form.addEventListener('submit', function(event){
+        event.preventDefault();
+        var submitBtn = document.getElementById('submit_button');
+        if(submitBtn){ submitBtn.disabled = true; submitBtn.value = (window.KintaiLabels && window.KintaiLabels.creating) ? window.KintaiLabels.creating : '登録中...'; }
+        var formData = new FormData(form);
+        var csrfToken = document.querySelector('meta[name="csrf-token"]').content;
+        var spentOn = formData.get('time_entry[spent_on]') || document.getElementById('time_entry_spent_on')?.value || '';
+        var y = null, m = null, d = null;
+        if(spentOn){ var parts = spentOn.split('-'); if(parts.length === 3){ y = parseInt(parts[0],10); m = parseInt(parts[1],10); d = parseInt(parts[2],10); } }
+        fetch(form.action + '.json', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-Token': csrfToken, 'X-Requested-With': 'XMLHttpRequest' },
+          body: JSON.stringify({ time_entry: { project_id: formData.get('time_entry[project_id]'), issue_id: formData.get('time_entry[issue_id]') || null, hours: formData.get('time_entry[hours]'), activity_id: formData.get('time_entry[activity_id]'), comments: formData.get('time_entry[comments]') || '', spent_on: spentOn }, year: y, month: m, day: d }) ,
+          credentials: 'include'
+        }).then(function(response){ if(!response.ok){ return response.json().then(function(err){ return Promise.reject(err); }); } return response.json(); }).then(function(data){ if(data.success && data.time_entry){ showMessage('success', data.message || '工数を登録しました'); addEntryToTable(data.time_entry); resetForm(); closeModal(); if(typeof loadDailyEntries === 'function'){ try{ loadDailyEntries(); }catch(e){ console.error('loadDailyEntries error', e); } } else { try{ location.reload(); }catch(e){} } } }).catch(function(error){ var errorMessage = '登録に失敗しました'; if(error && error.errors) errorMessage = error.errors.join(', '); showMessage('error', errorMessage); console.error('Error:', error); }).finally(function(){ if(submitBtn) submitBtn.disabled = false; if(submitBtn) submitBtn.value = (window.KintaiLabels && window.KintaiLabels.create) ? window.KintaiLabels.create : '作成'; });
+      });
+    }
+
+    var editForm = document.getElementById('edit_time_entry_form') || document.getElementById('kintai_edit_form');
+    if(editForm){
+      editForm.addEventListener('submit', function(event){
+        event.preventDefault();
+        var submitBtn = document.getElementById('edit_submit_button');
+        if(submitBtn){ submitBtn.disabled = true; submitBtn.textContent = (window.KintaiLabels && window.KintaiLabels.updating) ? window.KintaiLabels.updating : '更新中...'; }
+        var formData = new FormData(editForm);
+        var entryId = document.getElementById('edit_entry_id').value;
+        var csrfToken = document.querySelector('meta[name="csrf-token"]').content;
+        var spentOn = formData.get('time_entry[spent_on]') || document.getElementById('edit_time_entry_spent_on')?.value || '';
+        fetch('/kintai_kousu/' + entryId + '.json', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-Token': csrfToken, 'X-Requested-With': 'XMLHttpRequest' },
+          body: JSON.stringify({ time_entry: { project_id: formData.get('time_entry[project_id]'), issue_id: formData.get('time_entry[issue_id]') || null, hours: formData.get('time_entry[hours]'), activity_id: formData.get('time_entry[activity_id]'), comments: formData.get('time_entry[comments]') || '', spent_on: spentOn } }),
+          credentials: 'include'
+        }).then(function(response){ if(!response.ok){ return response.json().then(function(err){ return Promise.reject(err); }); } return response.json(); }).then(function(data){ if(data.success && data.time_entry){ showEditMessage('success', data.message || '工数を更新しました'); updateEntryInTable(data.time_entry); closeEditModal(); if(typeof loadDailyEntries === 'function'){ try{ loadDailyEntries(); }catch(e){ console.error('loadDailyEntries error', e); } } else { try{ location.reload(); }catch(e){} } } }).catch(function(error){ var errorMessage = '更新に失敗しました'; if(error && error.errors) errorMessage = error.errors.join(', '); showEditMessage('error', errorMessage); console.error('Error:', error); }).finally(function(){ if(submitBtn){ submitBtn.disabled = false; submitBtn.textContent = (window.KintaiLabels && window.KintaiLabels.save) ? window.KintaiLabels.save : '保存'; } });
+      });
+    }
+
+    var editIssueSelect = document.getElementById('edit_issue_select'); if(editIssueSelect){ editIssueSelect.addEventListener('change', function(){ if(this.value){ var issue = findIssueById(this.value); if(issue) showEditIssueInfo(issue); } else { hideEditIssueInfo(); } }); }
+  });
+
+})();
+
 </script>
 
 <%= javascript_include_tag 'kintai_attendance_calc', plugin: 'redmine_kintai_kousu' %>
 
+
 <script>
-window.addEventListener('load', function() {
-  const year = <%= @year %>;
-  const month = <%= @month %>;
-  function pad(n){ return n.toString().padStart(2, '0'); }
-
-  // event delegation: handle clicks even if elements are added later
-  document.addEventListener('click', function(e) {
-    const el = e.target.closest('.kintai-open-attendance');
-    if (!el) return;
-    e.preventDefault();
-    const day = el.dataset.day;
-    if (!day) return;
-    const dateStr = year + '-' + pad(month) + '-' + pad(day);
-
-    const spentOn = document.getElementById('kintai_spent_on');
-    if (spentOn) {
-      spentOn.value = dateStr;
-      spentOn.dispatchEvent(new Event('change', { bubbles: true }));
-    }
-
-    const attendanceDateInput = document.getElementById('kintai_attendance_date');
-    if (attendanceDateInput) {
-      attendanceDateInput.value = dateStr;
-      attendanceDateInput.dispatchEvent(new Event('change', { bubbles: true }));
-    }
-
-    const attendanceModal = document.getElementById('kintai_attendance_modal');
-    if (attendanceModal) {
-      attendanceModal.classList.add('open');
-      attendanceModal.setAttribute('aria-hidden', 'false');
-    }
-  });
-});
+  window.issuesData = <%= (@issues_by_project || {}).transform_values { |issues|
+    issues.map { |i| { id: i.id, tracker: i.tracker&.name, subject: i.subject } }
+  }.to_json.html_safe %>;
 </script>
 
-<br>
+<!-- Time entry modal (created from index data, opened by JS) -->
+<div id="time-entry-modal" style="display:none; position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); background:#fff; padding:20px; z-index:10000; box-shadow:0 2px 10px rgba(0,0,0,0.2);">
+  <h3>工数登録</h3>
+  <form id="kintai_create_form" action="<%= kintai_kousu_path %>" method="post">
+    <div>
+      <label>日付</label>
+      <input type="date" id="time_entry_spent_on" name="time_entry[spent_on]" class="form-control" required />
+    </div>
+    <div>
+      <label>プロジェクト</label>
+      <select id="project_select" name="time_entry[project_id]">
+        <option value="">---</option>
+        <% @projects.each do |p| %>
+          <option value="<%= p.id %>"><%= p.name %></option>
+        <% end %>
+      </select>
+    </div>
+    <div>
+      <label>チケット</label>
+      <input type="text" id="issue_select" name="time_entry[issue_id]" class="form-control" placeholder="チケットID (例: #123)" />
+    </div>
+    <div>
+      <label>活動</label>
+      <select id="activity_select" name="time_entry[activity_id]">
+        <% @activities.each do |a| %>
+          <option value="<%= a.id %>"><%= a.name %></option>
+        <% end %>
+      </select>
+    </div>
+    <div>
+      <label>時間</label>
+      <input type="text" id="hours_input" name="time_entry[hours]" />
+    </div>
+    <div>
+      <label>コメント</label>
+      <textarea id="comments_input" name="time_entry[comments]"></textarea>
+    </div>
+    <div style="margin-top:10px;">
+      <button type="submit" id="submit_button" class="kintai-create-entry">保存</button>
+      <button type="button" onclick="(function(){ var m=document.getElementById('time-entry-modal'); if(m) m.style.display='none'; })();">閉じる</button>
+    </div>
+  </form>
+</div>
+
+<!-- Edit time entry modal -->
+<div id="edit-time-entry-modal" style="display:none; position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); background:#fff; padding:20px; z-index:10001; box-shadow:0 2px 10px rgba(0,0,0,0.2);">
+  <h3>工数編集</h3>
+  <form id="kintai_edit_form" action="<%= kintai_kousu_path %>" method="post">
+    <input type="hidden" id="edit_entry_id" name="time_entry[id]" />
+    <div>
+      <label>日付</label>
+      <input type="date" id="edit_time_entry_spent_on" name="time_entry[spent_on]" class="form-control" required />
+    </div>
+    <div>
+      <label>プロジェクト</label>
+      <select id="edit_project_select" name="time_entry[project_id]">
+        <option value="">---</option>
+        <% @projects.each do |p| %>
+          <option value="<%= p.id %>"><%= p.name %></option>
+        <% end %>
+      </select>
+    </div>
+    <div>
+      <label>チケット</label>
+      <input type="text" id="edit_issue_select" name="time_entry[issue_id]" class="form-control" placeholder="チケットID (例: #123)" />
+    </div>
+    <div>
+      <label>活動</label>
+      <select id="edit_activity_select" name="time_entry[activity_id]">
+        <% @activities.each do |a| %>
+          <option value="<%= a.id %>"><%= a.name %></option>
+        <% end %>
+      </select>
+    </div>
+    <div>
+      <label>時間</label>
+      <input type="text" id="edit_hours_input" name="time_entry[hours]" />
+    </div>
+    <div>
+      <label>コメント</label>
+      <textarea id="edit_comments_input" name="time_entry[comments]"></textarea>
+    </div>
+    <div style="margin-top:10px;">
+      <button type="submit" id="edit_submit_button" class="kintai-update-entry">更新</button>
+      <button type="button" class="kintai-delete-entry">削除</button>
+      <button type="button" onclick="(function(){ var m=document.getElementById('edit-time-entry-modal'); if(m) m.style.display='none'; })();">閉じる</button>
+    </div>
+  </form>
+</div>
 
 <% if @time_entries.any? %>
   <h3><%= l(:label_details) %></h3>

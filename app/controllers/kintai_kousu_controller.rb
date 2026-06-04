@@ -1,6 +1,5 @@
 class KintaiKousuController < ApplicationController
   before_action :require_login
-  protect_from_forgery with: :null_session, only: [:create, :update, :destroy, :attendance_create]
 
   def index
     @user = User.current
@@ -75,6 +74,33 @@ class KintaiKousuController < ApplicationController
       .find_each do |record|
         @attendance_by_day[record.work_date.day] = record
       end
+
+    # Activities for time entry form
+    @activities = TimeEntryActivity.active.order(:position)
+
+    # Projects the user is member of (active)
+    @projects = Project
+      .joins(:members)
+      .where("members.user_id = ?", User.current.id)
+      .where("projects.status = ?", Project::STATUS_ACTIVE)
+      .order("projects.name")
+      .distinct
+
+    # Issues assigned to the user across those projects (for quick selection)
+    issues = Issue.visible
+      .joins(:project)
+      .where("issues.assigned_to_id = ?", User.current.id)
+      .where("projects.status = ?", Project::STATUS_ACTIVE)
+      .includes(:project, :status, :priority, :parent, :tracker)
+      .order("projects.name, issues.root_id, issues.lft")
+
+    @issues_by_project = {}
+    @projects.each do |project|
+      project_issues = issues.select { |i| i.project_id == project.id }
+      @issues_by_project[project] = project_issues.select { |i| i.parent_id.nil? }
+    end
+
+    @trackers = issues.map(&:tracker).uniq.sort_by(&:position)
   end
   
   def show
@@ -93,35 +119,9 @@ class KintaiKousuController < ApplicationController
     
     respond_to do |format|
       format.html do
-        # アクティビティ一覧
-        @activities = TimeEntryActivity.active.order(:position)
-        
-        # ユーザーがメンバーのプロジェクト一覧
-        @projects = Project
-          .joins(:members)
-          .where("members.user_id = ?", User.current.id)
-          .where("projects.status = ?", Project::STATUS_ACTIVE)
-          .order("projects.name")
-          .distinct
-        
-        # ユーザーが担当のチケット一覧（プロジェクトごとに分類、クローズ済みも含む）
-        issues = Issue.visible
-          .joins(:project)
-          .where("issues.assigned_to_id = ?", User.current.id)
-          .where("projects.status = ?", Project::STATUS_ACTIVE)
-          .includes(:project, :status, :priority, :parent, :tracker)
-          .order("projects.name, issues.root_id, issues.lft")
-        
-        # プロジェクトごとにチケットをグループ化
-        @issues_by_project = {}
-        @projects.each do |project|
-          project_issues = issues.select { |i| i.project_id == project.id }
-          # ルートチケットのみを取得（子チケットは後で再帰的に表示）
-          @issues_by_project[project] = project_issues.select { |i| i.parent_id.nil? }
-        end
-        
-        # トラッカー一覧を取得（フィルター用）
-        @trackers = issues.map(&:tracker).uniq.sort_by(&:position)
+        # show を直接表示するテンプレートは削除済みのため、
+        # index にリダイレクトして該当年月日にフォーカスします。
+        redirect_to kintai_kousu_path(year: @year, month: @month, project_id: params[:project_id], anchor: "day-#{@day}")
       end
       
       format.json do
@@ -161,7 +161,24 @@ class KintaiKousuController < ApplicationController
     @month = params[:month].to_i
     @day = params[:day].to_i
     @date = Date.new(@year, @month, @day)
-    
+
+    # Debug helpers: log cookies and relevant headers to diagnose session issues
+    begin
+      Rails.logger.info "[kintai_kousu#create] request.cookies: #{request.cookies.inspect}"
+      Rails.logger.info "[kintai_kousu#create] request.headers['Cookie']: #{request.headers['Cookie']}"
+      Rails.logger.info "[kintai_kousu#create] request.headers['X-CSRF-Token']: #{request.headers['X-CSRF-Token']}"
+      Rails.logger.info "[kintai_kousu#create] session[:user_id]=#{session[:user_id].inspect}, session[:tk]=#{session[:tk].inspect}"
+      Rails.logger.info "[kintai_kousu#create] Current user (before processing): #{User.current&.id || 'nil' } / #{User.current&.class}"
+      begin
+        token_scope = Token.where(user_id: session[:user_id], value: session[:tk], action: 'session')
+        Rails.logger.info "[kintai_kousu#create] token.exists?=#{token_scope.exists?}, token.updated_on=#{token_scope.pluck(:updated_on).inspect}"
+      rescue => e
+        Rails.logger.info "[kintai_kousu#create] token lookup error: #{e.message}"
+      end
+    rescue => e
+      Rails.logger.info "[kintai_kousu#create] debug log error: #{e.message}"
+    end
+
     respond_to do |format|
       if params[:time_entry]
         begin
@@ -435,5 +452,12 @@ class KintaiKousuController < ApplicationController
         end
       end
     end
+  end
+
+  # Treat controller actions as non-API requests so session-based auth works
+  # (the application by default treats JSON format as API and skips session auth)
+  private
+  def api_request?
+    false
   end
 end
