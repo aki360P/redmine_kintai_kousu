@@ -62,7 +62,7 @@
         <td style="text-align: center; background-color: #f0f0f0; padding: 4px 2px;">-</td>
       </tr>
       <tr style="background-color: #f7fbff;">
-        <td style="text-align: left; padding: 4px 2px;">就業時刻</td>
+        <td style="text-align: left; padding: 4px 2px;">終業時刻</td>
         <% (1..@last_day.day).each do |day| %>
           <% date = Date.new(@year, @month, day) %>
           <% record = @attendance_by_day[day] %>
