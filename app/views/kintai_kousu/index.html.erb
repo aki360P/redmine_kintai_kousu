@@ -1,7 +1,7 @@
 <h2><%=l(:label_kintai_kousu)%> (<%= @year %>年<%= @month %>月 - <%= @user.name %>)</h2>
 
 <div style="overflow-x: auto;">
-  <%= render 'attendance_combined' %>
+  <%= render 'kintai_kousu/attendance_combined' %>
   <div class="contextual">
     <% prev_month = @month - 1
        prev_year = @year
